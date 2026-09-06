@@ -1,0 +1,146 @@
+:root {
+  --room: #1f1b2e;
+  --room-deep: #14111f;
+  --stub: #f6ecd8;
+  --stub-edge: #d9c9a8;
+  --ink: #2b2420;
+  --ink-soft: #6e6257;
+  --bulb: #f2c14e;
+  --curtain: #a8323f;
+  --ready: #2f7a5a;
+  --radius: 10px;
+  --font-body: 'Karla', system-ui, sans-serif;
+  --font-display: 'Limelight', 'Georgia', serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; }
+
+body {
+  background: radial-gradient(120% 80% at 50% 0%, var(--room) 0%, var(--room-deep) 70%);
+  color: var(--stub);
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.45;
+  min-height: 100vh;
+}
+
+main { max-width: 620px; margin: 0 auto; padding: 24px 16px 80px; }
+
+.marquee {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(40px, 9vw, 64px);
+  line-height: 1;
+  margin: 0;
+  color: var(--bulb);
+  letter-spacing: 0.01em;
+  text-shadow: 0 0 18px rgba(242, 193, 78, 0.35), 0 0 2px rgba(242, 193, 78, 0.8);
+}
+
+.tagline { margin: 8px 0 28px; color: var(--stub-edge); }
+
+.top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.chip {
+  background: transparent;
+  color: var(--stub-edge);
+  border: 1px solid rgba(246, 236, 216, 0.25);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+.chip.on { background: var(--bulb); color: var(--ink); border-color: var(--bulb); }
+
+/* the ticket stub */
+.stubs { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+
+.stub {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  background: var(--stub);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 14px 16px 14px 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+/* perforated edge on the left */
+.stub::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 8px;
+  border-radius: var(--radius) 0 0 var(--radius);
+  background:
+    radial-gradient(circle at 4px 50%, var(--room-deep) 3px, transparent 3.5px) 0 0 / 8px 16px repeat-y,
+    var(--stub-edge);
+}
+.stub > * { position: relative; }
+
+.stub-form, .stub-signin { flex-direction: column; gap: 12px; padding-left: 22px; }
+.stub-signin { margin-top: 8px; }
+
+.poster { width: 64px; height: 96px; object-fit: cover; border-radius: 4px; flex: none; margin-left: 8px; background: var(--stub-edge); }
+.poster.blank { background: repeating-linear-gradient(135deg, var(--stub-edge) 0 6px, var(--stub) 6px 12px); }
+
+.body { flex: 1; min-width: 0; }
+.title { font-weight: 700; font-size: 19px; }
+.year { font-weight: 400; color: var(--ink-soft); }
+.sub { color: var(--ink-soft); }
+.note { margin-top: 4px; font-style: italic; color: var(--ink-soft); }
+
+.meta { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.kind { font-size: 14px; color: var(--ink-soft); }
+
+/* the stamp */
+.stamp {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border: 2px solid currentColor;
+  border-radius: 4px;
+  transform: rotate(-2deg);
+  color: var(--ink-soft);
+}
+.stamp.grabbed { color: var(--curtain); }
+.stamp.imported { color: var(--ready); }
+.stub.imported { opacity: 0.72; }
+
+.actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+
+.btn, .primary, .link {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 8px 14px;
+  text-decoration: none;
+}
+.btn { background: transparent; color: var(--ink); border: 1.5px solid var(--ink); }
+.primary { background: var(--curtain); color: #fff; border: 1.5px solid var(--curtain); font-weight: 700; }
+.primary:disabled { opacity: 0.6; cursor: default; }
+.link { background: none; border: none; color: inherit; opacity: 0.7; padding: 8px 4px; }
+.link:hover { opacity: 1; }
+
+label { display: grid; gap: 4px; font-size: 15px; color: var(--ink-soft); }
+input {
+  font: inherit;
+  padding: 9px 10px;
+  border: 1.5px solid var(--stub-edge);
+  border-radius: 8px;
+  background: #fffaf0;
+  color: var(--ink);
+}
+input:focus, button:focus-visible, a:focus-visible { outline: 3px solid var(--bulb); outline-offset: 2px; }
+
+.error { color: var(--curtain); margin: 0; font-size: 15px; }
+.empty { color: var(--stub-edge); text-align: center; padding: 40px 0; }
+
+@media (prefers-reduced-motion: reduce) { .stamp { transform: none; } }
