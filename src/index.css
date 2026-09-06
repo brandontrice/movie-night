@@ -144,3 +144,30 @@ input:focus, button:focus-visible, a:focus-visible { outline: 3px solid var(--bu
 .empty { color: var(--stub-edge); text-align: center; padding: 40px 0; }
 
 @media (prefers-reduced-motion: reduce) { .stamp { transform: none; } }
+
+/* v2: feed byline, trail, typeahead */
+.byline { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-soft); margin-bottom: 2px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.when { color: var(--ink-soft); opacity: 0.8; font-size: 13px; }
+.byline .kind { margin-left: auto; }
+
+.trail { list-style: none; margin: 6px 0 0; padding: 0 0 0 14px; border-left: 2px solid var(--stub-edge); font-size: 14px; color: var(--ink-soft); display: grid; gap: 2px; }
+.trail li { display: flex; gap: 8px; align-items: baseline; }
+.trail li.imported, .trail li.watched { color: var(--ready); }
+.trail li.grabbed { color: var(--curtain); }
+
+a.stamp { text-decoration: none; }
+a.stamp:hover { background: var(--ready); color: var(--stub); }
+
+.results { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.results button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; background: #fffaf0; border: 1.5px solid var(--stub-edge); border-radius: 8px; padding: 6px 8px; cursor: pointer; color: var(--ink); }
+.results button:hover { border-color: var(--ink); }
+.results img, .picked img { width: 36px; height: 54px; object-fit: cover; border-radius: 3px; flex: none; background: var(--stub-edge); }
+.results .noposter { width: 36px; height: 54px; border-radius: 3px; flex: none; background: repeating-linear-gradient(135deg, var(--stub-edge) 0 5px, #fffaf0 5px 10px); }
+.results em { display: block; font-style: normal; color: var(--ink-soft); font-size: 14px; }
+
+.picked { display: flex; align-items: center; gap: 10px; }
+.hint { margin: 0; font-size: 14px; color: var(--ink-soft); }
+
+.owned { display: grid; gap: 4px; padding: 10px 12px; border: 2px dashed var(--ready); border-radius: 8px; color: var(--ready); font-size: 15px; }
+.owned a { color: inherit; font-weight: 700; }
