@@ -17,7 +17,8 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; overflow-x: hidden; }
+/* clip, not hidden: hidden makes the body the scroll container and kills position: sticky on the marquee */
+html, body { margin: 0; overflow-x: clip; }
 
 body {
   background:
