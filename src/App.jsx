@@ -72,7 +72,20 @@ function seededShuffle(list, seed) {
 
 /* the sign over the door: a ring of bulbs around a black-and-gold board that chase on, then keep chasing */
 const TOP = 19, SIDE = 3
-function Marquee({ children }) {
+function Marquee({ children, sticky = false }) {
+  // once you've scrolled past the fold the sign tucks up into a slimmer version of itself and stays put
+  const [compact, setCompact] = useState(false)
+  useEffect(() => {
+    if (!sticky) return
+    let raf = 0
+    const on = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => setCompact((c) => (window.scrollY > (c ? 40 : 120))))
+    }
+    window.addEventListener('scroll', on, { passive: true })
+    on()
+    return () => { window.removeEventListener('scroll', on); cancelAnimationFrame(raf) }
+  }, [sticky])
   const bulbs = useMemo(() => {
     const out = []
     let n = 0
@@ -84,7 +97,7 @@ function Marquee({ children }) {
     return out
   }, [])
   return (
-    <div className="board">
+    <div className={'board' + (sticky ? ' sticky' : '') + (compact ? ' compact' : '')}>
       <div className="board-glow" aria-hidden="true" />
       <div className="board-inner">
         <div className="bulbs" aria-hidden="true">
@@ -318,7 +331,7 @@ function Feed({ session }) {
 
   return (
     <main className="queue">
-      <Marquee>
+      <Marquee sticky>
         <h1 className="marquee">movie night</h1>
         {rows.length === 0 && ready.length === 0
           ? <p className="tagline">nothing on the list yet</p>
