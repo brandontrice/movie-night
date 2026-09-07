@@ -17,6 +17,15 @@ const TRAIL = {
   watched: (who) => `${who} watched it`,
 }
 
+// "31 movies, 2 shows and 46 albums" from what's actually on the servers
+function shelfSummary(ready) {
+  const n = { movie: 0, show: 0, album: 0 }
+  for (const r of ready) if (r.type in n) n[r.type]++
+  const parts = TYPES.filter((t) => n[t]).map((t) => `${n[t]} ${t}${n[t] === 1 ? '' : 's'}`)
+  if (!parts.length) return 'nothing'
+  return parts.length === 1 ? parts[0] : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1]
+}
+
 function timeAgo(iso) {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
   if (s < 60) return 'just now'
@@ -253,7 +262,7 @@ function Feed({ session }) {
       <Marquee>
         <h1 className="marquee">movie night</h1>
         <p className="tagline">
-          {rows.length === 0 ? 'nothing on the list yet' : `${waiting.length} in line, ${grabbing.length} grabbing, ${ready.length} on the shelf`}
+          {rows.length === 0 ? 'nothing on the list yet' : `${waiting.length} in line, ${grabbing.length} grabbing, ${shelfSummary(ready)} on the shelf`}
         </p>
       </Marquee>
 
