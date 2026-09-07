@@ -169,7 +169,7 @@ function Feed({ session }) {
   const [scanning, setScanning] = useState({})
   const [thud, setThud] = useState({})
   const [open, setOpen] = useState(null)
-  const [lineAll, setLineAll] = useState(false)
+  const [lineAll, setLineAll] = useState({})
   const [shelfQ, setShelfQ] = useState('')
   const [shelfType, setShelfType] = useState('all')
   const [shelfOlder, setShelfOlder] = useState(false)
@@ -296,11 +296,16 @@ function Feed({ session }) {
   }
   function openForm() { setAdding(true) }
 
-  const lineRows = lineAll ? [...waiting, ...grabbing] : [...waiting, ...grabbing].slice(0, 5)
+  // the line splits into a column per person: whoever isn't brandon on the left, brandon on the right
   // something scanned straight into jellyfin or navidrome never went through a request, so no event names who did it.
   // only brandon imports, so credit him: his own id when he's the one looking, otherwise whoever the last import was credited to.
   const adder = isAdmin ? session.user.id : [...events].reverse().find((ev) => ev.event === 'imported')?.actor || null
   const arrivals = useArrivals(events, rows, ready, adder)
+  const lineCols = useMemo(() => {
+    const by = {}
+    for (const r of pending) (by[r.requested_by] ||= []).push(r)
+    return Object.keys(by).sort((a, b) => (a === adder) - (b === adder)).map((uid) => ({ uid, rows: by[uid] }))
+  }, [pending, adder])
   // the mark you last left. frozen for this visit so the shelf stays lit while you look; advanced when you dismiss the greeting
   const seenAtMount = useRef(localStorage.getItem(SEEN_KEY) || '')
   const isFresh = (a) => !seenAtMount.current || a.at > seenAtMount.current
@@ -308,22 +313,17 @@ function Feed({ session }) {
   const openRow = open ? (open.fromLibrary ? ready.find((r) => r.id === open.id) || open : rows.find((r) => r.id === open.id) || open) : null
 
   function Row({ r }) {
-    const p = profiles[r.requested_by]
     const isNew = seen.current && !seen.current.has(r.id)
     if (isNew) seen.current.add(r.id)
     return (
       <li className={'row ' + r.status + (isNew ? ' tear' : '')} onClick={(e) => { if (!e.target.closest('a,button')) setOpen(r) }}>
-        <span className="dot" style={{ background: p?.color || '#999' }} />
-        <span className="row-who">{who(r.requested_by)}</span>
         <span className="row-title">{r.title}{r.year ? <span className="year"> {r.year}</span> : null}{r.artist ? <span className="year"> · {r.artist}</span> : null}</span>
         <span className="row-when">{timeAgo(r.created_at)}</span>
         {r.status === 'grabbed' && <span className={'badge grabbed' + (thud[r.id] ? ' thud' : '')}>grabbing</span>}
         {(isAdmin || canPull(r)) && (
           <span className="row-actions">
             {isAdmin && <a className="icon" title="grab" href={GRAB_URL.replace('{q}', encodeURIComponent([r.artist, r.title, r.year].filter(Boolean).join(' ')))} target="_blank" rel="noreferrer">↗</a>}
-            {isAdmin && (r.status === 'requested'
-              ? <button className="btn tiny" onClick={() => setStatus(r.id, 'grabbed')}>grabbed</button>
-              : <button className={'btn tiny' + (scanning[r.id] ? ' busy' : '')} disabled={!!scanning[r.id]} onClick={() => markImported(r.id)}>{scanning[r.id] ? 'scanning' : 'imported'}</button>)}
+            {isAdmin && <button className={'btn tiny' + (scanning[r.id] ? ' busy' : '')} disabled={!!scanning[r.id]} onClick={() => markImported(r.id)}>{scanning[r.id] ? 'scanning' : 'imported'}</button>}
             {canPull(r) && (pulling[r.id]
               ? <button className="btn tiny pull sure" onClick={() => pull(r.id)}>sure?</button>
               : <button className="link tiny pull" onClick={() => askPull(r.id)}>nevermind</button>)}
@@ -385,12 +385,27 @@ function Feed({ session }) {
             {pending.length === 0 ? (
               <p className="hint dim">nothing waiting. ask for something.</p>
             ) : (
-              <ul className="line">
-                {lineRows.map((r) => <Row key={r.id} r={r} />)}
-              </ul>
-            )}
-            {pending.length > 5 && (
-              <button className="link" onClick={() => setLineAll((v) => !v)}>{lineAll ? 'show fewer' : `see all ${pending.length}`}</button>
+              <div className="line-cols">
+                {lineCols.map(({ uid, rows: list }) => {
+                  const all = !!lineAll[uid]
+                  const p = profiles[uid]
+                  return (
+                    <div key={uid} className="line-col">
+                      <h3 className="h sub">
+                        <span className="dot" style={{ background: p?.color || '#999' }} />
+                        {uid === session.user.id ? 'yours' : `${who(uid)}'s`}
+                        <span className="count">{list.length}</span>
+                      </h3>
+                      <ul className="line">
+                        {(all ? list : list.slice(0, 5)).map((r) => <Row key={r.id} r={r} />)}
+                      </ul>
+                      {list.length > 5 && (
+                        <button className="link" onClick={() => setLineAll((v) => ({ ...v, [uid]: !all }))}>{all ? 'show fewer' : `see all ${list.length}`}</button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </section>
 
@@ -445,7 +460,6 @@ function Feed({ session }) {
           cache={detailCache}
           isAdmin={isAdmin}
           scanning={!!scanning[openRow.id]}
-          onGrabbed={() => setStatus(openRow.id, 'grabbed')}
           onImported={() => markImported(openRow.id)}
           canPull={canPull(openRow)}
           pulling={!!pulling[openRow.id]}
@@ -602,7 +616,7 @@ function Greeting({ arrivals, isFresh, loaded, who, profiles, me, onOpen }) {
   )
 }
 
-function Sheet({ row, trail, who, cache, isAdmin, scanning, onGrabbed, onImported, canPull, pulling, onAskPull, onPull, onClose }) {
+function Sheet({ row, trail, who, cache, isAdmin, scanning, onImported, canPull, pulling, onAskPull, onPull, onClose }) {
   const [d, setD] = useState(cache.current[row.id] ?? null)
   const [failed, setFailed] = useState(false)
 
@@ -682,7 +696,6 @@ function Sheet({ row, trail, who, cache, isAdmin, scanning, onGrabbed, onImporte
             ) : isAdmin ? (
               <>
                 <a className="btn" href={GRAB_URL.replace('{q}', encodeURIComponent([row.artist, row.title, row.year].filter(Boolean).join(' ')))} target="_blank" rel="noreferrer">grab</a>
-                {row.status === 'requested' && <button className="btn" onClick={onGrabbed}>grabbed</button>}
                 <button className={'btn' + (scanning ? ' busy' : '')} disabled={scanning} onClick={onImported}>{scanning ? 'scanning the shelf' : 'imported'}</button>
               </>
             ) : (

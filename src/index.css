@@ -466,6 +466,13 @@ main { max-width: 980px; }
 .rail li.lead .rail-title { font-size: 14px; color: var(--stub); }
 
 /* the line: compact rows on paper */
+/* the line, one column per person */
+.line-cols { display: grid; grid-template-columns: 1fr; gap: 18px; }
+@media (min-width: 760px) { .line-cols { grid-template-columns: 1fr 1fr; align-items: start; } }
+.line-col { min-width: 0; }
+.h.sub { font-size: 14px; margin-bottom: 8px; }
+.h.sub .dot { width: 9px; height: 9px; box-shadow: none; }
+.line-col > .link { color: var(--stub-edge); }
 .line, .shelf { list-style: none; margin: 0; padding: 0; background: var(--stub); color: var(--ink); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); overflow: hidden; }
 .row {
   display: flex; align-items: center; gap: 10px; padding: 11px 14px;
