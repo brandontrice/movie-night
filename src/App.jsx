@@ -79,17 +79,24 @@ function SignIn() {
   )
 }
 
+const NINETY_DAYS = 90 * 24 * 3600 * 1000
+const PAGE = 20
+
 function Feed({ session }) {
   const isAdmin = (session.user.email || '').toLowerCase() === ADMIN_EMAIL
   const [rows, setRows] = useState([])
   const [events, setEvents] = useState([])
   const [profiles, setProfiles] = useState({})
-  const [filter, setFilter] = useState('all')
   const [adding, setAdding] = useState(false)
   const [type, setType] = useState('movie')
   const [scanning, setScanning] = useState({})
   const [thud, setThud] = useState({})
   const [open, setOpen] = useState(null)
+  const [lineAll, setLineAll] = useState(false)
+  const [shelfQ, setShelfQ] = useState('')
+  const [shelfType, setShelfType] = useState('all')
+  const [shelfOlder, setShelfOlder] = useState(false)
+  const [shelfPage, setShelfPage] = useState(1)
   const detailCache = useRef({})
   const seen = useRef(null)
   const prevStatus = useRef({})
@@ -100,9 +107,7 @@ function Feed({ session }) {
       supabase.from('media_events').select('*').order('at'),
     ])
     const list = r.data || []
-    // first load: everything is "seen"; later loads: new ids get the tear-in
     if (seen.current === null) seen.current = new Set(list.map((x) => x.id))
-    // stamp thud on any status change
     const changed = {}
     for (const x of list) {
       const was = prevStatus.current[x.id]
@@ -138,123 +143,170 @@ function Feed({ session }) {
     return by
   }, [events])
 
-  const visible = filter === 'all' ? rows : rows.filter((r) => r.type === filter)
   const who = (uid) => profiles[uid]?.display_name || 'someone'
 
-  function openForm() {
-    setType(filter === 'all' ? 'movie' : filter)
-    setAdding(true)
-  }
+  // the three populations
+  const pending = useMemo(() => rows.filter((r) => r.status !== 'imported'), [rows])
+  const waiting = pending.filter((r) => r.status === 'requested')
+  const grabbing = pending.filter((r) => r.status === 'grabbed')
+  const ready = useMemo(
+    () => rows.filter((r) => r.status === 'imported').sort((a, b) => (b.imported_at || b.created_at).localeCompare(a.imported_at || a.created_at)),
+    [rows]
+  )
+  const nowShowing = ready.slice(0, 8)
+  const justAdded = useMemo(() => {
+    const by = {}
+    for (const t of TYPES) by[t] = ready.filter((r) => r.type === t).slice(0, 3)
+    return by
+  }, [ready])
+  const shelf = useMemo(() => {
+    const cutoff = Date.now() - NINETY_DAYS
+    const q = shelfQ.trim().toLowerCase()
+    return ready.filter((r) =>
+      (shelfType === 'all' || r.type === shelfType) &&
+      (shelfOlder || new Date(r.imported_at || r.created_at).getTime() >= cutoff) &&
+      (!q || r.title.toLowerCase().includes(q) || (r.artist || '').toLowerCase().includes(q))
+    )
+  }, [ready, shelfQ, shelfType, shelfOlder])
+  const olderCount = useMemo(() => {
+    const cutoff = Date.now() - NINETY_DAYS
+    return ready.filter((r) => new Date(r.imported_at || r.created_at).getTime() < cutoff).length
+  }, [ready])
 
   async function setStatus(id, status) {
     await supabase.from('media_requests').update({ status }).eq('id', id)
   }
-
   async function markImported(id) {
     setScanning((s) => ({ ...s, [id]: true }))
     const { error } = await supabase.functions.invoke('library-scan', { body: { id } })
     if (error) await setStatus(id, 'imported')
     setScanning((s) => ({ ...s, [id]: false }))
   }
+  function openForm() { setAdding(true) }
 
-  const counts = useMemo(() => {
-    const c = { all: rows.length }
-    for (const t of TYPES) c[t] = rows.filter((r) => r.type === t).length
-    return c
-  }, [rows])
+  const lineRows = lineAll ? [...waiting, ...grabbing] : [...waiting, ...grabbing].slice(0, 5)
+  const openRow = open ? rows.find((r) => r.id === open.id) || open : null
 
-  const waiting = rows.filter((r) => r.status !== 'imported').length
-  const ready = rows.length - waiting
+  function Row({ r }) {
+    const p = profiles[r.requested_by]
+    const isNew = seen.current && !seen.current.has(r.id)
+    if (isNew) seen.current.add(r.id)
+    return (
+      <li className={'row ' + r.status + (isNew ? ' tear' : '')} onClick={(e) => { if (!e.target.closest('a,button')) setOpen(r) }}>
+        <span className="dot" style={{ background: p?.color || '#999' }} />
+        <span className="row-who">{who(r.requested_by)}</span>
+        <span className="row-title">{r.title}{r.year ? <span className="year"> {r.year}</span> : null}{r.artist ? <span className="year"> · {r.artist}</span> : null}</span>
+        <span className="row-when">{timeAgo(r.created_at)}</span>
+        {r.status === 'grabbed' && <span className={'badge grabbed' + (thud[r.id] ? ' thud' : '')}>grabbing</span>}
+        {isAdmin && (
+          <span className="row-actions">
+            <a className="icon" title="grab" href={GRAB_URL.replace('{q}', encodeURIComponent([r.artist, r.title, r.year].filter(Boolean).join(' ')))} target="_blank" rel="noreferrer">↗</a>
+            {r.status === 'requested'
+              ? <button className="btn tiny" onClick={() => setStatus(r.id, 'grabbed')}>grabbed</button>
+              : <button className={'btn tiny' + (scanning[r.id] ? ' busy' : '')} disabled={!!scanning[r.id]} onClick={() => markImported(r.id)}>{scanning[r.id] ? 'scanning' : 'imported'}</button>}
+          </span>
+        )}
+      </li>
+    )
+  }
 
   return (
     <main className="queue">
       <Marquee>
         <h1 className="marquee">movie night</h1>
-        <p className="tagline">{rows.length === 0 ? 'nothing on the list yet' : `${waiting} waiting, ${ready} ready`}</p>
+        <p className="tagline">
+          {rows.length === 0 ? 'nothing on the list yet' : `${waiting.length} in line, ${grabbing.length} grabbing, ${ready.length} ready`}
+        </p>
       </Marquee>
 
-      {/* one row of chips: filters the feed, or picks the type while adding */}
-      <div className={'chips ticketrow' + (adding ? ' picking' : '')} role="tablist">
-        {!adding && (
-          <button role="tab" aria-selected={filter === 'all'} className={'chip' + (filter === 'all' ? ' on' : '')} onClick={() => setFilter('all')}>
-            everything
-          </button>
-        )}
-        {TYPES.map((t) => {
-          const on = adding ? type === t : filter === t
-          return (
-            <button key={t} role="tab" aria-selected={on} className={'chip' + (on ? ' on' : '')} onClick={() => (adding ? setType(t) : setFilter(t))}>
-              {adding ? t : t + 's'}{!adding && counts[t] ? <span className="count">{counts[t]}</span> : null}
-            </button>
-          )
-        })}
-      </div>
-
-      {adding && <AddForm user={session.user} type={type} listed={new Set(rows.filter((r) => r.type === type && r.external_id).map((r) => r.external_id))} onDone={() => setAdding(false)} />}
-
-      {visible.length === 0 && !adding && (
-        <div className="empty">
-          <div className="ticket-ghost" aria-hidden="true" />
-          <p>{filter === 'all' ? 'the list is empty. ask for something.' : `no ${filter}s on the list yet.`}</p>
-        </div>
+      {adding && (
+        <>
+          <div className="chips ticketrow picking" role="tablist">
+            {TYPES.map((t) => (
+              <button key={t} role="tab" aria-selected={type === t} className={'chip' + (type === t ? ' on' : '')} onClick={() => setType(t)}>{t}</button>
+            ))}
+          </div>
+          <AddForm user={session.user} type={type} listed={new Set(rows.filter((r) => r.type === type && r.external_id).map((r) => r.external_id))} onDone={() => setAdding(false)} />
+        </>
       )}
 
-      <ul className="stubs">
-        {visible.map((r) => {
-          const trail = trailFor[r.id] || []
-          const first = trail[0]
-          const p = profiles[r.requested_by]
-          const isNew = seen.current && !seen.current.has(r.id)
-          if (isNew) seen.current.add(r.id)
-          return (
-            <li key={r.id} className={'stub peekable ' + r.status + (isNew ? ' tear' : '')} onClick={(e) => { if (!e.target.closest('a,button')) setOpen(r) }}>
-              {r.poster_url ? <img className="poster" src={r.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <div className="poster blank" />}
-              <div className="body">
-                <div className="byline">
-                  <span className="dot" style={{ background: p?.color || '#999' }} />
-                  <span>{who(r.requested_by)}</span>
-                  <span className="when">{timeAgo(first?.at || r.created_at)}</span>
-                  <span className="kind">{r.type}</span>
-                </div>
-                <div className="title">{r.title}{r.year ? <span className="year"> {r.year}</span> : null}</div>
-                {r.artist && <div className="sub">{r.artist}</div>}
-                {r.note && <div className="note">{r.note}</div>}
+      <div className="layout">
+        <div className="col-main">
+          {/* now showing */}
+          <section className="block">
+            <h2 className="h">now showing</h2>
+            {nowShowing.length === 0 ? (
+              <p className="hint dim">nothing ready yet. the first thing brandon imports lands here.</p>
+            ) : (
+              <ul className="rail">
+                {nowShowing.map((r, i) => (
+                  <li key={r.id} className={i === 0 ? 'lead' : ''}>
+                    <a href={r.play_url || '#'} onClick={(e) => { if (!r.play_url) { e.preventDefault(); setOpen(r) } }} target={r.play_url ? '_blank' : undefined} rel="noreferrer">
+                      {r.poster_url ? <img src={r.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="poster blank" />}
+                      <span className="rail-title">{r.title}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
-                {trail.length > 1 && (
-                  <ol className="trail">
-                    {trail.slice(1).map((ev) => (
-                      <li key={ev.id} className={ev.event}>
-                        {TRAIL[ev.event](who(ev.actor), r)}
-                        <span className="when">{timeAgo(ev.at)}</span>
-                      </li>
-                    ))}
-                  </ol>
-                )}
+          {/* the line */}
+          <section className="block">
+            <h2 className="h">the line <span className="count">{pending.length}</span></h2>
+            {pending.length === 0 ? (
+              <p className="hint dim">nothing waiting. ask for something.</p>
+            ) : (
+              <ul className="line">
+                {lineRows.map((r) => <Row key={r.id} r={r} />)}
+              </ul>
+            )}
+            {pending.length > 5 && (
+              <button className="link" onClick={() => setLineAll((v) => !v)}>{lineAll ? 'show fewer' : `see all ${pending.length}`}</button>
+            )}
+          </section>
 
-                <div className="meta">
-                  {r.status === 'imported' && r.play_url ? (
-                    <a className={'stamp imported' + (thud[r.id] ? ' thud' : '')} href={r.play_url} target="_blank" rel="noreferrer">{READY[r.type]}, play it</a>
-                  ) : (
-                    <span className={'stamp ' + r.status + (thud[r.id] ? ' thud' : '')}>
-                      {r.status === 'imported' ? READY[r.type] : r.status === 'grabbed' ? 'grabbing it' : 'on the list'}
-                    </span>
-                  )}
-                </div>
+          {/* just added (mobile position) */}
+          <section className="block rail-mobile">
+            <JustAdded justAdded={justAdded} onOpen={setOpen} />
+          </section>
 
-                {isAdmin && r.status !== 'imported' && (
-                  <div className="actions">
-                    <a className="btn" href={GRAB_URL.replace('{q}', encodeURIComponent([r.artist, r.title, r.year].filter(Boolean).join(' ')))} target="_blank" rel="noreferrer">grab</a>
-                    {r.status === 'requested' && <button className="btn" onClick={() => setStatus(r.id, 'grabbed')}>grabbed</button>}
-                    <button className={'btn' + (scanning[r.id] ? ' busy' : '')} disabled={!!scanning[r.id]} onClick={() => markImported(r.id)}>
-                      {scanning[r.id] ? 'scanning the shelf' : 'imported'}
-                    </button>
-                  </div>
-                )}
+          {/* the shelf */}
+          <section className="block">
+            <h2 className="h">the shelf</h2>
+            <div className="shelf-tools">
+              <input value={shelfQ} onChange={(e) => { setShelfQ(e.target.value); setShelfPage(1) }} placeholder="search what's been imported" />
+              <div className="chips">
+                {['all', ...TYPES].map((t) => (
+                  <button key={t} className={'chip' + (shelfType === t ? ' on' : '')} onClick={() => { setShelfType(t); setShelfPage(1) }}>{t === 'all' ? 'everything' : t + 's'}</button>
+                ))}
               </div>
-            </li>
-          )
-        })}
-      </ul>
+            </div>
+            {shelf.length === 0 ? (
+              <p className="hint dim">{ready.length === 0 ? 'nothing imported yet' : 'nothing matches'}</p>
+            ) : (
+              <ul className="shelf">
+                {shelf.slice(0, shelfPage * PAGE).map((r) => (
+                  <li key={r.id} className="row imported" onClick={(e) => { if (!e.target.closest('a,button')) setOpen(r) }}>
+                    {r.poster_url ? <img className="thumb" src={r.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
+                    <span className="row-title">{r.title}{r.year ? <span className="year"> {r.year}</span> : null}{r.artist ? <span className="year"> · {r.artist}</span> : null}</span>
+                    <span className="row-when">{timeAgo(r.imported_at || r.created_at)}</span>
+                    {r.play_url && <a className="btn tiny" href={r.play_url} target="_blank" rel="noreferrer">play</a>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="actions">
+              {shelf.length > shelfPage * PAGE && <button className="btn" onClick={() => setShelfPage((p) => p + 1)}>load more</button>}
+              {olderCount > 0 && <button className="link" onClick={() => { setShelfOlder((v) => !v); setShelfPage(1) }}>{shelfOlder ? 'hide older than 90 days' : `show ${olderCount} older`}</button>}
+            </div>
+          </section>
+        </div>
+
+        <aside className="col-rail rail-desktop">
+          <JustAdded justAdded={justAdded} onOpen={setOpen} />
+        </aside>
+      </div>
 
       {!adding && (
         <button className="fab" onClick={openForm} aria-label="request something">
@@ -262,16 +314,16 @@ function Feed({ session }) {
         </button>
       )}
 
-      {open && (
+      {openRow && (
         <Sheet
-          row={rows.find((r) => r.id === open.id) || open}
-          trail={trailFor[open.id] || []}
+          row={openRow}
+          trail={trailFor[openRow.id] || []}
           who={who}
           cache={detailCache}
           isAdmin={isAdmin}
-          scanning={!!scanning[open.id]}
-          onGrabbed={() => setStatus(open.id, 'grabbed')}
-          onImported={() => markImported(open.id)}
+          scanning={!!scanning[openRow.id]}
+          onGrabbed={() => setStatus(openRow.id, 'grabbed')}
+          onImported={() => markImported(openRow.id)}
           onClose={() => setOpen(null)}
         />
       )}
@@ -280,6 +332,32 @@ function Feed({ session }) {
         <button className="link" onClick={() => supabase.auth.signOut()}>sign out</button>
       </footer>
     </main>
+  )
+}
+
+function JustAdded({ justAdded, onOpen }) {
+  const any = TYPES.some((t) => justAdded[t].length)
+  return (
+    <div className="just-added">
+      <h2 className="h">just added</h2>
+      {!any && <p className="hint dim">nothing yet</p>}
+      {TYPES.map((t) => justAdded[t].length > 0 && (
+        <div key={t} className="ja-group">
+          <div className="ja-type">{t}s</div>
+          <ul>
+            {justAdded[t].map((r) => (
+              <li key={r.id}>
+                <button className="ja-item" onClick={() => onOpen(r)}>
+                  {r.poster_url ? <img src={r.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
+                  <span className="ja-title">{r.title}</span>
+                  <span className="when">{timeAgo(r.imported_at || r.created_at)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
   )
 }
 
