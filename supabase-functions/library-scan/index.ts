@@ -54,7 +54,7 @@ function rest(path: string, auth: string, init: RequestInit = {}) {
 
 async function findJellyfin(title: string, year: number | null, type: string) {
   const kinds = type === 'show' ? 'Series' : 'Movie'
-  const u = `${JELLYFIN_URL}/Items?searchTerm=${encodeURIComponent(title)}&IncludeItemTypes=${kinds}&Recursive=true&Limit=10&Fields=ProductionYear`
+  const u = `${JELLYFIN_URL}/Users/${Deno.env.get('JELLYFIN_USER_ID')}/Items?searchTerm=${encodeURIComponent(title)}&IncludeItemTypes=${kinds}&Recursive=true&Limit=10&Fields=ProductionYear`
   const r = await fetch(u, { headers: jellyfinHeaders })
   if (!r.ok) return null
   const items = (await r.json()).Items ?? []

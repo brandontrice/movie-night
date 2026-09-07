@@ -32,7 +32,7 @@ function subsonicUrl(path: string, params: Record<string, string>) {
 
 async function jellyfinItems() {
   if (!JELLYFIN_URL || !JELLYFIN_KEY) return []
-  const u = `${JELLYFIN_URL}/Items?IncludeItemTypes=Movie,Series&Recursive=true&SortBy=DateCreated&SortOrder=Descending&Limit=500&Fields=DateCreated,ProductionYear,ProviderIds,Overview`
+  const u = `${JELLYFIN_URL}/Users/${Deno.env.get('JELLYFIN_USER_ID')}/Items?IncludeItemTypes=Movie,Series&Recursive=true&SortBy=DateCreated&SortOrder=Descending&Limit=500&Fields=DateCreated,ProductionYear,ProviderIds,Overview`
   const r = await fetch(u, { headers: jellyfinHeaders })
   if (!r.ok) return []
   const data = await r.json()
