@@ -382,6 +382,14 @@ function Reel({ events, rows, who, onOpen }) {
 
   const fresh = arrivals.filter((a) => !seenAt || a.at > seenAt).length
 
+  // first look after arriving on the page: if anything landed since you were last here, show it
+  const greeted = useRef(false)
+  useEffect(() => {
+    if (greeted.current || !events.length) return
+    greeted.current = true
+    if (fresh > 0) setOpenTray(true)
+  }, [events.length, fresh])
+
   // toast anything that arrives after first load
   useEffect(() => {
     if (!events.length) return
@@ -399,13 +407,12 @@ function Reel({ events, rows, who, onOpen }) {
     localStorage.setItem(SEEN_KEY, latest)
     setSeenAt(latest)
   }
-  function toggle() {
-    setOpenTray((v) => { if (!v) markSeen(); return !v })
-  }
+  function close() { markSeen(); setOpenTray(false) }
+  function toggle() { openTray ? close() : setOpenTray(true) }
 
   useEffect(() => {
     if (!openTray) return
-    const onKey = (e) => e.key === 'Escape' && setOpenTray(false)
+    const onKey = (e) => e.key === 'Escape' && close()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [openTray])
@@ -433,11 +440,11 @@ function Reel({ events, rows, who, onOpen }) {
       </div>
 
       {openTray && (
-        <div className="reel-wrap" onClick={() => setOpenTray(false)}>
+        <div className="reel-wrap" onClick={close}>
           <aside className="reel" role="dialog" aria-label="new on the shelf" onClick={(e) => e.stopPropagation()}>
             <div className="reel-head">
               <h2 className="h">new on the shelf</h2>
-              <button className="link" onClick={() => setOpenTray(false)}>close</button>
+              <button className="link" onClick={close}>close</button>
             </div>
             {arrivals.length === 0 ? (
               <p className="hint dim">nothing new this week</p>
@@ -445,7 +452,7 @@ function Reel({ events, rows, who, onOpen }) {
               <ul className="reel-list">
                 {arrivals.map((a) => (
                   <li key={a.id}>
-                    <button className="reel-item" onClick={() => { setOpenTray(false); onOpen(a.row) }}>
+                    <button className="reel-item" onClick={() => { close(); onOpen(a.row) }}>
                       {a.row.poster_url ? <img src={a.row.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
                       <span className="reel-body">
                         <span className="reel-line">{line(a)}</span>
