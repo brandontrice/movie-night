@@ -425,6 +425,7 @@ main { max-width: 980px; }
 /* v11: now showing is tonight's picks */
 .h .h-link { margin-left: auto; color: var(--stub-edge); font-size: 13px; opacity: 0.8; }
 .h .h-link:hover { color: var(--bulb); opacity: 1; }
+.h .h-link-2 { margin-left: 0; }
 .rail li.watched img { opacity: 0.55; filter: saturate(0.6); }
 .rail li.watched .rail-title { color: var(--stub-edge); opacity: 0.7; }
 .rail-title .seen { font-size: 11px; letter-spacing: 0.04em; opacity: 0.7; }

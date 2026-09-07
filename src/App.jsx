@@ -212,14 +212,15 @@ function Feed({ session }) {
   // now showing: a daily shuffle of what nobody's watched yet, same on every phone, reshuffle on demand.
   // topped up with watched titles only when the unwatched pool runs dry.
   const [roll, setRoll] = useState(0)
+  const [railAll, setRailAll] = useState(false)
   const watchable = useMemo(() => ready.filter((r) => r.type !== 'album'), [ready])
   const unwatched = useMemo(() => watchable.filter((r) => !r.played), [watchable])
   const nowShowing = useMemo(() => {
     const seed = `${new Date().toDateString()}:${roll}`
     const picks = seededShuffle(unwatched, seed)
-    if (picks.length < 8) picks.push(...seededShuffle(watchable.filter((r) => r.played), seed))
-    return picks.slice(0, 8)
-  }, [unwatched, watchable, roll])
+    if (railAll || picks.length < 8) picks.push(...seededShuffle(watchable.filter((r) => r.played), seed))
+    return railAll ? picks : picks.slice(0, 8)
+  }, [unwatched, watchable, roll, railAll])
   const shelf = useMemo(() => {
     const cutoff = Date.now() - NINETY_DAYS
     const q = shelfQ.trim().toLowerCase()
@@ -322,6 +323,7 @@ function Feed({ session }) {
               now showing
               {unwatched.length > 0 && <span className="count">{unwatched.length} unwatched</span>}
               {watchable.length > 1 && <button className="link tiny h-link" onClick={() => setRoll((n) => n + 1)}>reshuffle</button>}
+              {watchable.length > 8 && <button className="link tiny h-link h-link-2" onClick={() => setRailAll((v) => !v)}>{railAll ? 'just a few' : `all ${watchable.length}`}</button>}
             </h2>
             {nowShowing.length === 0 ? (
               <p className="hint dim">{libLoaded ? 'nothing on the servers yet' : 'checking the shelf'}</p>
