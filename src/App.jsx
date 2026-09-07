@@ -234,7 +234,7 @@ function Feed({ session }) {
       <Marquee>
         <h1 className="marquee">movie night</h1>
         <p className="tagline">
-          {rows.length === 0 ? 'nothing on the list yet' : `${waiting.length} in line, ${grabbing.length} grabbing, ${ready.length} ready`}
+          {rows.length === 0 ? 'nothing on the list yet' : `${waiting.length} in line, ${grabbing.length} grabbing, ${ready.length} on the shelf`}
         </p>
       </Marquee>
 
