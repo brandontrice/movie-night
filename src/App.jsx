@@ -136,6 +136,7 @@ function Feed({ session }) {
   const [shelfPage, setShelfPage] = useState(1)
   const [library, setLibrary] = useState([])
   const [libLoaded, setLibLoaded] = useState(false)
+  const [rowsLoaded, setRowsLoaded] = useState(false)
   const detailCache = useRef({})
   const seen = useRef(null)
   const prevStatus = useRef({})
@@ -160,6 +161,7 @@ function Feed({ session }) {
     }
     setRows(list)
     setEvents(e.data || [])
+    setRowsLoaded(true)
   }
 
   async function loadLibrary() {
@@ -383,7 +385,7 @@ function Feed({ session }) {
         </div>
       </div>
 
-      <Greeting arrivals={arrivals} isFresh={isFresh} loaded={events.length > 0 || libLoaded} who={who} onOpen={(r) => setOpen(r)} />
+      <Greeting arrivals={arrivals} isFresh={isFresh} loaded={rowsLoaded && libLoaded} who={who} onOpen={(r) => setOpen(r)} />
 
       {!adding && (
         <button className="fab" onClick={openForm} aria-label="request something">
@@ -435,11 +437,11 @@ function useArrivals(events, rows, ready, adder) {
       if (!req) continue
       const item = req.library_item_id ? byLib[req.library_item_id] : null
       if (req.library_item_id) covered.add(req.library_item_id)
-      out.push({ id: `ev:${ev.id}`, at: ev.at, actor: ev.actor, row: item || req })
+      out.push({ id: `ev:${ev.id}`, key: req.library_item_id || req.id, at: ev.at, actor: ev.actor, row: item || req })
     }
     for (const r of ready) {
       if (!r.added_at || covered.has(r.library_item_id) || new Date(r.added_at).getTime() < cutoff) continue
-      out.push({ id: `lib:${r.library_item_id}`, at: r.added_at, actor: adder, row: r })
+      out.push({ id: `lib:${r.library_item_id}`, key: r.library_item_id, at: r.added_at, actor: adder, row: r })
     }
     return out.sort((a, b) => new Date(b.at) - new Date(a.at))
   }, [events, rows, ready, adder])
@@ -464,10 +466,10 @@ function Greeting({ arrivals, isFresh, loaded, who, onOpen }) {
   // toast anything that arrives after first load
   useEffect(() => {
     if (!loaded) return
-    const ids = new Set(arrivals.map((a) => a.id))
-    if (known.current === null) { known.current = ids; return }
-    const newOnes = arrivals.filter((a) => !known.current.has(a.id))
-    known.current = ids
+    const keys = new Set(arrivals.map((a) => a.key))
+    if (known.current === null) { known.current = keys; return }
+    const newOnes = arrivals.filter((a) => !known.current.has(a.key))
+    known.current = keys
     if (!newOnes.length) return
     setToasts((t) => [...newOnes.map((a) => ({ id: a.id, a })), ...t].slice(0, 4))
     for (const n of newOnes) setTimeout(() => setToasts((t) => t.filter((x) => x.id !== n.id)), 7000)
