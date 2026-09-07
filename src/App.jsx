@@ -199,6 +199,18 @@ function Feed({ session }) {
   async function setStatus(id, status) {
     await supabase.from('media_requests').update({ status }).eq('id', id)
   }
+  // pulling a ticket: only while it's still just requested, only your own (brandon can pull any)
+  const [pulling, setPulling] = useState({})
+  const canPull = (r) => r.status === 'requested' && (isAdmin || r.requested_by === session.user.id)
+  function askPull(id) {
+    setPulling((p) => ({ ...p, [id]: true }))
+    setTimeout(() => setPulling((p) => { const n = { ...p }; delete n[id]; return n }), 3500)
+  }
+  async function pull(id) {
+    setPulling((p) => { const n = { ...p }; delete n[id]; return n })
+    setOpen((o) => (o?.id === id ? null : o))
+    await supabase.from('media_requests').delete().eq('id', id)
+  }
   async function markImported(id) {
     setScanning((s) => ({ ...s, [id]: true }))
     const { error } = await supabase.functions.invoke('library-scan', { body: { id } })
@@ -221,12 +233,15 @@ function Feed({ session }) {
         <span className="row-title">{r.title}{r.year ? <span className="year"> {r.year}</span> : null}{r.artist ? <span className="year"> · {r.artist}</span> : null}</span>
         <span className="row-when">{timeAgo(r.created_at)}</span>
         {r.status === 'grabbed' && <span className={'badge grabbed' + (thud[r.id] ? ' thud' : '')}>grabbing</span>}
-        {isAdmin && (
+        {(isAdmin || canPull(r)) && (
           <span className="row-actions">
-            <a className="icon" title="grab" href={GRAB_URL.replace('{q}', encodeURIComponent([r.artist, r.title, r.year].filter(Boolean).join(' ')))} target="_blank" rel="noreferrer">↗</a>
-            {r.status === 'requested'
+            {isAdmin && <a className="icon" title="grab" href={GRAB_URL.replace('{q}', encodeURIComponent([r.artist, r.title, r.year].filter(Boolean).join(' ')))} target="_blank" rel="noreferrer">↗</a>}
+            {isAdmin && (r.status === 'requested'
               ? <button className="btn tiny" onClick={() => setStatus(r.id, 'grabbed')}>grabbed</button>
-              : <button className={'btn tiny' + (scanning[r.id] ? ' busy' : '')} disabled={!!scanning[r.id]} onClick={() => markImported(r.id)}>{scanning[r.id] ? 'scanning' : 'imported'}</button>}
+              : <button className={'btn tiny' + (scanning[r.id] ? ' busy' : '')} disabled={!!scanning[r.id]} onClick={() => markImported(r.id)}>{scanning[r.id] ? 'scanning' : 'imported'}</button>)}
+            {canPull(r) && (pulling[r.id]
+              ? <button className="btn tiny pull sure" onClick={() => pull(r.id)}>sure?</button>
+              : <button className="link tiny pull" onClick={() => askPull(r.id)}>nevermind</button>)}
           </span>
         )}
       </li>
@@ -349,6 +364,10 @@ function Feed({ session }) {
           scanning={!!scanning[openRow.id]}
           onGrabbed={() => setStatus(openRow.id, 'grabbed')}
           onImported={() => markImported(openRow.id)}
+          canPull={canPull(openRow)}
+          pulling={!!pulling[openRow.id]}
+          onAskPull={() => askPull(openRow.id)}
+          onPull={() => pull(openRow.id)}
           onClose={() => setOpen(null)}
         />
       )}
@@ -497,7 +516,7 @@ function JustAdded({ justAdded, onOpen }) {
   )
 }
 
-function Sheet({ row, trail, who, cache, isAdmin, scanning, onGrabbed, onImported, onClose }) {
+function Sheet({ row, trail, who, cache, isAdmin, scanning, onGrabbed, onImported, canPull, pulling, onAskPull, onPull, onClose }) {
   const [d, setD] = useState(cache.current[row.id] ?? null)
   const [failed, setFailed] = useState(false)
 
@@ -583,6 +602,9 @@ function Sheet({ row, trail, who, cache, isAdmin, scanning, onGrabbed, onImporte
             ) : (
               <span className={'stamp ' + row.status}>{row.status === 'grabbed' ? 'grabbing it' : 'on the list'}</span>
             )}
+            {canPull && (pulling
+              ? <button className="btn pull sure" onClick={onPull}>sure? take it off the list</button>
+              : <button className="link pull" onClick={onAskPull}>nevermind</button>)}
           </div>
         </div>
       </section>

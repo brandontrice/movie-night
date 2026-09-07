@@ -521,3 +521,9 @@ main { max-width: 980px; }
   .reel-count { transform: none; }
   .reel-toasts { bottom: 140px; }
 }
+
+/* v10: pulling a ticket you changed your mind about */
+.pull { color: var(--ink-soft); }
+.link.pull:hover { color: var(--curtain); opacity: 1; }
+.pull.sure { color: #fff; background: var(--curtain); border-color: var(--curtain); animation: thud 0.4s cubic-bezier(0.3, 1.4, 0.4, 1) both; }
+.pull.sure:hover { background: #bf3a49; }
