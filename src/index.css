@@ -583,6 +583,10 @@ main { max-width: 980px; }
 .reel-title { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reel-sub { font-weight: 400; color: var(--ink-soft); }
 
+/* the imported tap came up empty */
+.btn.missed { color: var(--curtain); border-color: var(--curtain); animation: thud 0.4s cubic-bezier(0.3, 1.4, 0.4, 1) both; }
+.btn.missed:hover { background: transparent; color: var(--curtain); }
+
 /* v10: pulling a ticket you changed your mind about */
 .pull { color: var(--ink-soft); }
 .link.pull:hover { color: var(--curtain); opacity: 1; }

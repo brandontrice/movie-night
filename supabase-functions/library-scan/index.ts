@@ -1,7 +1,8 @@
 // library-scan: the "imported" tap.
 // POST { id: uuid } with the user's Authorization header.
-// Kicks a scan on Jellyfin (movie/show) or Navidrome (album), waits for it,
-// finds the new item, and updates the request with status + play_url.
+// Kicks a scan on Jellyfin (movie/show) or Navidrome (album), waits for it, and looks for the item the same way
+// reconcile does: by TMDB / MusicBrainz id when the request has one, else exact title + year (or artist).
+// Only a real match flips the request to imported; otherwise it's left alone and { found: false } comes back.
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -52,29 +53,28 @@ function rest(path: string, auth: string, init: RequestInit = {}) {
   })
 }
 
-async function findJellyfin(title: string, year: number | null, type: string) {
+async function findJellyfin(title: string, year: number | null, type: string, ext: string | null) {
   const kinds = type === 'show' ? 'Series' : 'Movie'
-  const u = `${JELLYFIN_URL}/Users/${Deno.env.get('JELLYFIN_USER_ID')}/Items?searchTerm=${encodeURIComponent(title)}&IncludeItemTypes=${kinds}&Recursive=true&Limit=10&Fields=ProductionYear`
+  // the whole library, not a searchTerm query: ids are the reliable key and a title search can miss on punctuation
+  const u = `${JELLYFIN_URL}/Users/${Deno.env.get('JELLYFIN_USER_ID')}/Items?IncludeItemTypes=${kinds}&Recursive=true&Limit=2000&Fields=ProductionYear,ProviderIds`
   const r = await fetch(u, { headers: jellyfinHeaders })
   if (!r.ok) return null
   const items = (await r.json()).Items ?? []
   const want = norm(title)
-  const hit =
-    items.find((i: any) => norm(i.Name) === want && (!year || i.ProductionYear === year)) ??
-    items.find((i: any) => norm(i.Name) === want) ??
-    items[0]
+  const hit = ext
+    ? items.find((i: any) => i.ProviderIds?.Tmdb && String(i.ProviderIds.Tmdb) === ext)
+    : items.find((i: any) => norm(i.Name) === want && (!year || i.ProductionYear === year))
   return hit ? { id: hit.Id, play_url: `${JELLYFIN_URL}/web/index.html#/details?id=${hit.Id}` } : null
 }
 
-async function findNavidrome(title: string, artist: string | null) {
-  const data = await subsonic('search3', { query: title, albumCount: '10', songCount: '0', artistCount: '0' })
+async function findNavidrome(title: string, artist: string | null, ext: string | null) {
+  const data = await subsonic('search3', { query: title, albumCount: '20', songCount: '0', artistCount: '0' })
   const albums = data?.['subsonic-response']?.searchResult3?.album ?? []
   const want = norm(title)
   const wantArtist = norm(artist ?? '')
-  const hit =
-    albums.find((a: any) => norm(a.name) === want && (!wantArtist || norm(a.artist).includes(wantArtist))) ??
-    albums.find((a: any) => norm(a.name) === want) ??
-    albums[0]
+  const hit = ext
+    ? albums.find((a: any) => a.musicBrainzId === ext)
+    : albums.find((a: any) => norm(a.name) === want && (!wantArtist || norm(a.artist).includes(wantArtist)))
   return hit ? { id: hit.id, play_url: `${NAVIDROME_URL}/app/#/album/${hit.id}/show` } : null
 }
 
@@ -105,24 +105,28 @@ Deno.serve(async (req) => {
     if (!row) return json({ error: 'request not found' }, 404)
 
     let found: { id: string; play_url: string } | null = null
+    const ext = row.external_id ? String(row.external_id) : null
 
     if (row.type === 'album') {
       await scanNavidrome()
-      found = await findNavidrome(row.title, row.artist)
+      found = await findNavidrome(row.title, row.artist, ext)
     } else {
       await scanJellyfin()
       // Jellyfin's refresh is async; poll for the item to appear
       for (let i = 0; i < 15 && !found; i++) {
         await sleep(3000)
-        found = await findJellyfin(row.title, row.year, row.type)
+        found = await findJellyfin(row.title, row.year, row.type, ext)
       }
     }
 
-    const patch = { status: 'imported', play_url: found?.play_url ?? null, library_item_id: found?.id ?? null }
+    // no match, no flip: the request stays in line and the app says so
+    if (!found) return json({ ok: true, found: false })
+
+    const patch = { status: 'imported', play_url: found.play_url, library_item_id: found.id }
     const up = await rest(`media_requests?id=eq.${id}`, auth, { method: 'PATCH', body: JSON.stringify(patch) })
     if (!up.ok) return json({ error: await up.text() }, 500)
 
-    return json({ ok: true, found: !!found, play_url: found?.play_url ?? null })
+    return json({ ok: true, found: true, play_url: found.play_url })
   } catch (e) {
     return json({ error: String(e) }, 500)
   }

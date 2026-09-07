@@ -287,11 +287,16 @@ function Feed({ session }) {
     setOpen((o) => (o?.id === id ? null : o))
     await supabase.from('media_requests').delete().eq('id', id)
   }
+  // "imported": scan, then only close the request if the item is really there. otherwise say so and leave it in line.
+  const [missed, setMissed] = useState({})
   async function markImported(id) {
     setScanning((s) => ({ ...s, [id]: true }))
-    const { error } = await supabase.functions.invoke('library-scan', { body: { id } })
-    if (error) await setStatus(id, 'imported')
+    const { data, error } = await supabase.functions.invoke('library-scan', { body: { id } })
     setScanning((s) => ({ ...s, [id]: false }))
+    if (error || !data?.found) {
+      setMissed((m) => ({ ...m, [id]: true }))
+      setTimeout(() => setMissed((m) => { const n = { ...m }; delete n[id]; return n }), 4000)
+    }
   }
   function openForm() { setAdding(true) }
 
@@ -321,7 +326,7 @@ function Feed({ session }) {
         {r.status === 'grabbed' && <span className={'badge grabbed' + (thud[r.id] ? ' thud' : '')}>grabbing</span>}
         {(isAdmin || canPull(r)) && (
           <span className="row-actions">
-            {isAdmin && <button className={'btn tiny' + (scanning[r.id] ? ' busy' : '')} disabled={!!scanning[r.id]} onClick={() => markImported(r.id)}>{scanning[r.id] ? 'scanning' : 'imported'}</button>}
+            {isAdmin && <button className={'btn tiny' + (scanning[r.id] ? ' busy' : '') + (missed[r.id] ? ' missed' : '')} disabled={!!scanning[r.id]} onClick={() => markImported(r.id)}>{scanning[r.id] ? 'scanning' : missed[r.id] ? 'not on the shelf yet' : 'imported'}</button>}
             {canPull(r) && (pulling[r.id]
               ? <button className="btn tiny pull sure" onClick={() => pull(r.id)}>sure?</button>
               : <button className="link tiny pull" onClick={() => askPull(r.id)}>nevermind</button>)}
@@ -458,6 +463,7 @@ function Feed({ session }) {
           cache={detailCache}
           isAdmin={isAdmin}
           scanning={!!scanning[openRow.id]}
+          missed={!!missed[openRow.id]}
           onImported={() => markImported(openRow.id)}
           canPull={canPull(openRow)}
           pulling={!!pulling[openRow.id]}
@@ -614,7 +620,7 @@ function Greeting({ arrivals, isFresh, loaded, who, profiles, me, onOpen }) {
   )
 }
 
-function Sheet({ row, trail, who, cache, isAdmin, scanning, onImported, canPull, pulling, onAskPull, onPull, onClose }) {
+function Sheet({ row, trail, who, cache, isAdmin, scanning, missed, onImported, canPull, pulling, onAskPull, onPull, onClose }) {
   const [d, setD] = useState(cache.current[row.id] ?? null)
   const [failed, setFailed] = useState(false)
 
@@ -693,7 +699,7 @@ function Sheet({ row, trail, who, cache, isAdmin, scanning, onImported, canPull,
               <span className="stamp imported">{READY[row.type]}</span>
             ) : isAdmin ? (
               <>
-                <button className={'btn' + (scanning ? ' busy' : '')} disabled={scanning} onClick={onImported}>{scanning ? 'scanning the shelf' : 'imported'}</button>
+                <button className={'btn' + (scanning ? ' busy' : '') + (missed ? ' missed' : '')} disabled={scanning} onClick={onImported}>{scanning ? 'scanning the shelf' : missed ? 'not on the shelf yet' : 'imported'}</button>
               </>
             ) : (
               <span className={'stamp ' + row.status}>{row.status === 'grabbed' ? 'grabbing it' : 'on the list'}</span>
