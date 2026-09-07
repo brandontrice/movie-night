@@ -1,4 +1,4 @@
-// reconcile: flip pending requests to imported when the item shows up on the shelf.
+// reconcile: flip requested/grabbed requests to imported when the item shows up on the shelf.
 // Runs unattended (pg_cron / manual curl), so it authenticates with a shared secret
 // and writes with the service-role key instead of a user session.
 //
@@ -129,7 +129,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const pendRes = await rest(`media_requests?status=eq.pending&select=id,type,title,year,artist,external_id`)
+    const pendRes = await rest(`media_requests?status=in.(requested,pending,grabbed)&select=id,type,title,year,artist,external_id`)
     if (!pendRes.ok) return json({ error: await pendRes.text() }, 500)
     const pending: Req[] = await pendRes.json()
     if (pending.length === 0) return json({ checked: 0, imported: 0, items: [] })
