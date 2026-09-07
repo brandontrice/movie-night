@@ -17,7 +17,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; }
+html, body { margin: 0; overflow-x: hidden; }
 
 body {
   background:
@@ -363,7 +363,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--bulb); outline-
 
 /* ---------- v8: three views ---------- */
 main { max-width: 980px; }
-.layout { display: grid; grid-template-columns: 1fr; gap: 26px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 26px; }
+.col-main, .col-rail { min-width: 0; }
 @media (min-width: 900px) {
   .layout { grid-template-columns: minmax(0, 1fr) 260px; align-items: start; }
   .rail-mobile { display: none; }
@@ -380,8 +381,8 @@ main { max-width: 980px; }
 
 /* now showing rail */
 .rail {
-  list-style: none; margin: 0 -16px; padding: 4px 16px 10px;
-  display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+  list-style: none; margin: 0; padding: 4px 0 10px;
+  display: flex; gap: 12px; overflow-x: auto; max-width: 100%; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
 .rail::-webkit-scrollbar { display: none; }
