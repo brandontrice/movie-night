@@ -118,20 +118,24 @@ main { position: relative; z-index: 1; max-width: 620px; margin: 0 auto; padding
 }
 @keyframes glow-in { from { opacity: 0.3; filter: blur(2px); } to { opacity: 1; } }
 @keyframes shimmer { 0%, 100% { background-position: 100% 0; } 50% { background-position: 0% 0; } }
-/* the numbers, set like a bill: small caps, tracked out, gold rules either side */
+/* the numbers, set like a bill: small caps, tracked out, gold rules either side.
+   the bits sit in one centred group so when they have to wrap the rules stay put and the lines stay centred */
 .tagline {
   margin: 14px auto 0; max-width: 560px;
-  display: flex; align-items: center; justify-content: center; flex-wrap: wrap; column-gap: 0; row-gap: 4px;
+  display: flex; align-items: center; justify-content: center;
   color: var(--stub-edge); font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase;
 }
-.tagline::before, .tagline::after {
-  content: ''; flex: 1 1 24px; max-width: 70px; height: 1px; margin: 0 14px;
-  background: linear-gradient(90deg, transparent, rgba(255, 209, 102, 0.55));
-}
-.tagline::after { background: linear-gradient(90deg, rgba(255, 209, 102, 0.55), transparent); }
+.tag-rule { flex: 1 1 0; min-width: 14px; max-width: 70px; height: 1px; margin: 0 12px; background: linear-gradient(90deg, transparent, rgba(255, 209, 102, 0.55)); }
+.tag-rule:last-child { background: linear-gradient(90deg, rgba(255, 209, 102, 0.55), transparent); }
+.tag-bits { flex: 0 1 auto; display: flex; flex-wrap: wrap; justify-content: center; row-gap: 4px; }
 .tag-bit { display: inline-flex; align-items: center; white-space: nowrap; }
 .tag-bit strong { color: var(--bulb); font-weight: 700; margin-right: 0.4em; }
 .tag-sep { color: rgba(255, 209, 102, 0.6); margin: 0 10px; }
+@media (max-width: 520px) {
+  .tagline { font-size: 11px; letter-spacing: 0.1em; }
+  .tag-sep { margin: 0 8px; }
+  .tag-rule { margin: 0 8px; }
+}
 
 /* the sign stays up top while everything else scrolls by underneath; past the fold it tucks into a slimmer form */
 .board.sticky { position: sticky; top: 0; z-index: 8; padding-top: 10px; margin-top: -10px; }

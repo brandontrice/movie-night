@@ -24,12 +24,16 @@ function Tagline({ pending, ready }) {
   const bits = [[pending, 'in line'], ...TYPES.filter((t) => n[t]).map((t) => [n[t], `${t}${n[t] === 1 ? '' : 's'}`])]
   return (
     <p className="tagline">
-      {bits.map(([num, label], i) => (
-        <span key={label} className="tag-bit">
-          {i > 0 && <span className="tag-sep" aria-hidden="true">&middot;</span>}
-          <strong>{num}</strong> {label}
-        </span>
-      ))}
+      <span className="tag-rule" aria-hidden="true" />
+      <span className="tag-bits">
+        {bits.map(([num, label], i) => (
+          <span key={label} className="tag-bit">
+            {i > 0 && <span className="tag-sep" aria-hidden="true">&middot;</span>}
+            <strong>{num}</strong> {label}
+          </span>
+        ))}
+      </span>
+      <span className="tag-rule" aria-hidden="true" />
     </p>
   )
 }
