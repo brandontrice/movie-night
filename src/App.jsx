@@ -414,6 +414,7 @@ function Feed({ session }) {
                     {r.poster_url ? <img className="thumb" src={r.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
                     <span className="row-title">{r.title}{r.year ? <span className="year"> {r.year}</span> : null}{r.artist ? <span className="year"> · {r.artist}</span> : null}</span>
                     {isRecent(r) && <span className="tag new">new</span>}
+                    {r.requested_by && <span className="for" style={{ '--c': profiles[r.requested_by]?.color || '#999' }}>for {r.requested_by === session.user.id ? 'you' : who(r.requested_by)}</span>}
                     <span className="row-when">{timeAgo(r.imported_at || r.created_at)}</span>
                     {r.play_url && <a className="btn tiny" href={r.play_url} target="_blank" rel="noreferrer">play</a>}
                   </li>
@@ -428,7 +429,7 @@ function Feed({ session }) {
         </div>
       </div>
 
-      <Greeting arrivals={arrivals} isFresh={isFresh} loaded={rowsLoaded && libLoaded} who={who} onOpen={(r) => setOpen(r)} />
+      <Greeting arrivals={arrivals} isFresh={isFresh} loaded={rowsLoaded && libLoaded} who={who} profiles={profiles} me={session.user.id} onOpen={(r) => setOpen(r)} />
 
       {!adding && (
         <button className="fab" onClick={openForm} aria-label="request something">
@@ -492,7 +493,7 @@ function useArrivals(events, rows, ready, adder) {
 
 /* the greeting: once, on load, if anything landed since you were last here, a stub that says so and lists it.
    "got it" (or tapping away) moves the mark. plus toasts for anything that lands while the page is open. */
-function Greeting({ arrivals, isFresh, loaded, who, onOpen }) {
+function Greeting({ arrivals, isFresh, loaded, who, profiles, me, onOpen }) {
   const [show, setShow] = useState(false)
   const [toasts, setToasts] = useState([])
   const known = useRef(null)
@@ -532,7 +533,13 @@ function Greeting({ arrivals, isFresh, loaded, who, onOpen }) {
   }, [show])
 
   const name = (a) => (a.actor ? who(a.actor) : null)
-  const line = (a) => <>{name(a) ? <><strong>{name(a)}</strong> added </> : 'now on the shelf: '}<em>{a.row.title}</em></>
+  const asked = (a) => (a.row.requested_by && a.row.requested_by !== a.actor ? a.row.requested_by : null)
+  const forWhom = (a) => {
+    const uid = asked(a)
+    if (!uid) return null
+    return <span className="for" style={{ '--c': profiles[uid]?.color || '#999' }}>for {uid === me ? 'you' : who(uid)}</span>
+  }
+  const line = (a) => <>{name(a) ? <><strong>{name(a)}</strong> added </> : 'now on the shelf: '}<em>{a.row.title}</em>{asked(a) && <> {forWhom(a)}</>}</>
 
   // "2 movies and an album"
   const summary = (() => {
@@ -575,6 +582,7 @@ function Greeting({ arrivals, isFresh, loaded, who, onOpen }) {
                           <span className="reel-body">
                             <span className="reel-title">{a.row.title}{a.row.artist ? <span className="reel-sub"> {a.row.artist}</span> : null}</span>
                             <span className="reel-when">{name(a) ? `${name(a)} added it, ` : ''}{when(a.at)}</span>
+                            {asked(a) && <span className="reel-for">{forWhom(a)}</span>}
                           </span>
                           {a.row.play_url && <a className="btn tiny" href={a.row.play_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>play</a>}
                         </button>
