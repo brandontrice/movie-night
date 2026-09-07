@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
 
 const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || '').toLowerCase()
-const GRAB_URL = import.meta.env.VITE_GRAB_URL || 'https://duckduckgo.com/?q={q}'
 const TYPES = ['movie', 'show', 'album']
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -322,7 +321,6 @@ function Feed({ session }) {
         {r.status === 'grabbed' && <span className={'badge grabbed' + (thud[r.id] ? ' thud' : '')}>grabbing</span>}
         {(isAdmin || canPull(r)) && (
           <span className="row-actions">
-            {isAdmin && <a className="icon" title="grab" href={GRAB_URL.replace('{q}', encodeURIComponent([r.artist, r.title, r.year].filter(Boolean).join(' ')))} target="_blank" rel="noreferrer">↗</a>}
             {isAdmin && <button className={'btn tiny' + (scanning[r.id] ? ' busy' : '')} disabled={!!scanning[r.id]} onClick={() => markImported(r.id)}>{scanning[r.id] ? 'scanning' : 'imported'}</button>}
             {canPull(r) && (pulling[r.id]
               ? <button className="btn tiny pull sure" onClick={() => pull(r.id)}>sure?</button>
@@ -695,7 +693,6 @@ function Sheet({ row, trail, who, cache, isAdmin, scanning, onImported, canPull,
               <span className="stamp imported">{READY[row.type]}</span>
             ) : isAdmin ? (
               <>
-                <a className="btn" href={GRAB_URL.replace('{q}', encodeURIComponent([row.artist, row.title, row.year].filter(Boolean).join(' ')))} target="_blank" rel="noreferrer">grab</a>
                 <button className={'btn' + (scanning ? ' busy' : '')} disabled={scanning} onClick={onImported}>{scanning ? 'scanning the shelf' : 'imported'}</button>
               </>
             ) : (
