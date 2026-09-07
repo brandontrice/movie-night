@@ -188,7 +188,7 @@ function Feed({ session }) {
         })}
       </div>
 
-      {adding && <AddForm user={session.user} type={type} onDone={() => setAdding(false)} />}
+      {adding && <AddForm user={session.user} type={type} listed={new Set(rows.filter((r) => r.type === type && r.external_id).map((r) => r.external_id))} onDone={() => setAdding(false)} />}
 
       {visible.length === 0 && !adding && (
         <div className="empty">
@@ -267,7 +267,7 @@ function Feed({ session }) {
   )
 }
 
-function AddForm({ user, type, onDone }) {
+function AddForm({ user, type, listed, onDone }) {
   const [q, setQ] = useState('')
   const [results, setResults] = useState({ candidates: [], owned: [] })
   const [note, setNote] = useState('')
@@ -309,7 +309,7 @@ function AddForm({ user, type, onDone }) {
       requested_by: user.id,
     })
     setBusy(false)
-    if (error) return setError('could not add that, try again')
+    if (error) return setError(error.code === '23505' ? "that's already on the list" : 'could not add that, try again')
     // stay here: drop the one we added, keep the rest, say so
     setResults((r) => ({ ...r, candidates: r.candidates.filter((c) => c.external_id !== row.external_id || !row.external_id) }))
     if (!row.external_id) setQ('')
@@ -360,14 +360,14 @@ function AddForm({ user, type, onDone }) {
           <p className="hint">tap one to add it</p>
           <ul className="results">
             {results.candidates.map((c, i) => (
-              <li key={c.external_id} style={{ '--i': i }}>
-                <button type="button" disabled={busy} onClick={() => add(c)}>
+              <li key={c.external_id} style={{ '--i': i }} className={listed.has(c.external_id) ? 'listed' : ''}>
+                <button type="button" disabled={busy || listed.has(c.external_id)} onClick={() => add(c)}>
                   {c.poster_url ? <img src={c.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="noposter" />}
                   <span>
                     <strong>{c.title}</strong>{c.year ? ` ${c.year}` : ''}
                     {c.artist && <em>{c.artist}</em>}
                   </span>
-                  <span className="go">add</span>
+                  <span className="go">{listed.has(c.external_id) ? 'on the list' : 'add'}</span>
                 </button>
               </li>
             ))}
