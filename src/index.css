@@ -364,12 +364,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--bulb); outline-
 /* ---------- v8: three views ---------- */
 main { max-width: 980px; }
 .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 26px; }
-.col-main, .col-rail { min-width: 0; }
-@media (min-width: 900px) {
-  .layout { grid-template-columns: minmax(0, 1fr) 260px; align-items: start; }
-  .rail-mobile { display: none; }
-}
-@media (max-width: 899px) { .rail-desktop { display: none; } }
+.col-main { min-width: 0; }
 
 .block { margin-bottom: 26px; }
 .h {
@@ -434,7 +429,9 @@ main { max-width: 980px; }
 .rail li.watched .rail-title { color: var(--stub-edge); opacity: 0.7; }
 .rail-title .seen { font-size: 11px; letter-spacing: 0.04em; opacity: 0.7; }
 
-/* the shelf */
+/* the shelf: lit until you've had a look */
+.h .count.fresh { background: var(--curtain); color: #fff; animation: thud 0.55s cubic-bezier(0.3, 1.4, 0.4, 1) both; }
+.shelf .row.fresh { box-shadow: inset 4px 0 0 var(--bulb); background: rgba(255, 209, 102, 0.16); }
 .shelf-tools { display: grid; gap: 8px; margin-bottom: 10px; }
 .shelf-tools input { background: rgba(246, 236, 216, 0.08); border-color: rgba(246, 236, 216, 0.2); color: var(--stub); }
 .shelf-tools input::placeholder { color: rgba(246, 236, 216, 0.45); }
@@ -444,27 +441,7 @@ main { max-width: 980px; }
 .block > .actions .btn:hover { background: var(--stub); color: var(--ink); }
 .block > .link { color: var(--stub-edge); }
 
-/* v9: fresh off the reel, a side tray of what just landed */
-.reel-tab {
-  position: fixed; right: 0; top: 40%; z-index: 5;
-  transform: rotate(-90deg) translate(50%, -100%); transform-origin: right top;
-  display: inline-flex; align-items: center; gap: 8px;
-  background: var(--board); color: var(--stub-edge);
-  border: 1px solid #2a2437; border-bottom: none; border-radius: 10px 10px 0 0;
-  padding: 8px 14px; font: inherit; font-size: 14px; letter-spacing: 0.02em; cursor: pointer;
-  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.4);
-  transition: color 0.2s, box-shadow 0.2s;
-}
-.reel-tab:hover, .reel-tab.fresh { color: var(--bulb); }
-.reel-tab.fresh { box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.4), 0 0 14px rgba(255, 209, 102, 0.35); }
-.reel-icon { font-size: 10px; opacity: 0.7; }
-.reel-count {
-  background: var(--curtain); color: #fff; font-weight: 700; font-size: 12px;
-  border-radius: 999px; padding: 0 7px; line-height: 18px; min-width: 18px; text-align: center;
-  transform: rotate(90deg);
-  animation: thud 0.55s cubic-bezier(0.3, 1.4, 0.4, 1) both;
-}
-
+/* v9/v11: toasts for what lands while you're here, and the greeting for what landed while you were away */
 .reel-toasts {
   position: fixed; right: max(16px, calc(50% - 310px + 16px)); bottom: 84px; z-index: 6;
   display: grid; gap: 8px; width: min(340px, calc(100vw - 32px));
@@ -483,60 +460,30 @@ main { max-width: 980px; }
 .reel-line strong { font-weight: 700; }
 .reel-line em { font-style: normal; font-weight: 700; color: var(--ready); }
 .reel-when { display: block; font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+@media (max-width: 520px) { .reel-toasts { bottom: 140px; } }
 
-.reel-wrap { position: fixed; inset: 0; z-index: 7; background: rgba(10, 8, 16, 0.55); backdrop-filter: blur(2px); }
-.reel {
-  position: absolute; top: 0; right: 0; bottom: 0; width: min(380px, 100vw);
-  background: var(--stub); color: var(--ink);
-  padding: 18px 18px 24px; overflow-y: auto;
-  box-shadow: -18px 0 40px rgba(0, 0, 0, 0.5);
-  animation: reel-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+.greet-wrap {
+  position: fixed; inset: 0; z-index: 7; background: rgba(10, 8, 16, 0.6); backdrop-filter: blur(2px);
+  display: grid; place-items: center; padding: 16px;
 }
-@keyframes reel-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
-.reel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.reel-head .h { color: var(--ink); margin: 0; }
-.reel-head .link { color: var(--ink); }
-.reel .hint.dim { color: var(--ink-soft); }
-/* v11: one list for "new on the shelf", inline on desktop (dark) and in the tray on mobile (parchment) */
-.new-shelf { display: grid; gap: 12px; }
-.new-shelf .h .count.fresh { background: var(--curtain); color: #fff; animation: thud 0.55s cubic-bezier(0.3, 1.4, 0.4, 1) both; }
+.greet { width: min(440px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; }
+.greet-kicker { margin: 0; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
+.greet-title { margin: 2px 0 12px; font-size: 20px; line-height: 1.25; }
+.greet .actions { margin-top: 14px; }
+
 .reel-groups { display: grid; gap: 12px; }
-.reel-type { font-size: 13px; color: var(--stub-edge); opacity: 0.8; margin-bottom: 4px; }
-.reel-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.reel-type { font-size: 13px; color: var(--ink-soft); margin-bottom: 4px; }
+.reel-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .reel-item {
-  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
-  background: rgba(246, 236, 216, 0.06); border: 1px solid rgba(246, 236, 216, 0.1); color: var(--stub);
-  border-left: 3px solid transparent;
-  border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 15px; cursor: pointer;
-  transition: background 0.15s, transform 0.12s, border-color 0.15s;
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  background: transparent; color: var(--ink); border: 1.5px solid var(--stub-edge); border-left: 4px solid var(--bulb); border-radius: var(--radius);
+  padding: 8px 10px; font: inherit; font-size: 15px; cursor: pointer; transition: border-color 0.15s, transform 0.15s;
 }
-.reel-item:hover { background: rgba(246, 236, 216, 0.12); transform: translateX(2px); }
-.reel-item img { width: 28px; height: 42px; object-fit: cover; border-radius: 3px; flex: none; background: rgba(246, 236, 216, 0.15); }
+.reel-item:hover { border-color: var(--ink); border-left-color: var(--bulb); transform: translateX(2px); }
+.reel-item img { width: 34px; height: 51px; object-fit: cover; border-radius: 3px; flex: none; background: var(--stub-edge); }
 .reel-body { flex: 1; min-width: 0; }
 .reel-title { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.reel-sub { font-weight: 400; color: var(--stub-edge); }
-.reel-item .reel-when { color: var(--stub-edge); margin-top: 1px; }
-.reel-item .btn.tiny { color: var(--stub); border-color: rgba(246, 236, 216, 0.4); }
-.reel-item .btn.tiny:hover { background: var(--stub); color: var(--ink); }
-/* lit until you've had a look */
-.reel-item.fresh { border-left-color: var(--bulb); background: rgba(255, 209, 102, 0.1); box-shadow: 0 0 0 1px rgba(255, 209, 102, 0.18), 0 0 16px rgba(255, 209, 102, 0.12); }
-.reel-item.fresh:hover { background: rgba(255, 209, 102, 0.16); }
-
-/* inside the parchment tray, flip to ink */
-.reel .reel-type { color: var(--ink-soft); }
-.reel .reel-item { background: transparent; border: 1.5px solid var(--stub-edge); border-left: 3px solid var(--stub-edge); color: var(--ink); border-radius: var(--radius); padding: 8px 10px; }
-.reel .reel-item:hover { border-color: var(--ink); }
-.reel .reel-item img { width: 34px; height: 51px; background: var(--stub-edge); }
-.reel .reel-sub, .reel .reel-item .reel-when { color: var(--ink-soft); }
-.reel .reel-item .btn.tiny { color: var(--ink); border-color: var(--ink); }
-.reel .reel-item .btn.tiny:hover { background: var(--ink); color: var(--stub); }
-.reel .reel-item.fresh { border-color: var(--bulb-dim); border-left-color: var(--bulb); background: rgba(255, 209, 102, 0.18); box-shadow: none; }
-
-@media (max-width: 520px) {
-  .reel-tab { top: auto; bottom: 88px; right: 0; transform: none; border-radius: 10px 0 0 10px; border: 1px solid #2a2437; border-right: none; padding: 8px 10px; }
-  .reel-count { transform: none; }
-  .reel-toasts { bottom: 140px; }
-}
+.reel-sub { font-weight: 400; color: var(--ink-soft); }
 
 /* v10: pulling a ticket you changed your mind about */
 .pull { color: var(--ink-soft); }

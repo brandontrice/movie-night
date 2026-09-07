@@ -62,19 +62,6 @@ function seededShuffle(list, seed) {
   return a
 }
 
-// true when the two-column layout is in play (matches the 900px breakpoint in index.css)
-function useDesktop() {
-  const get = () => typeof window !== 'undefined' && window.matchMedia('(min-width: 900px)').matches
-  const [desk, setDesk] = useState(get)
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 900px)')
-    const on = () => setDesk(mq.matches)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [])
-  return desk
-}
-
 /* the sign over the door: a ring of bulbs that chase on, then twinkle */
 function Marquee({ children }) {
   const bulbs = useMemo(() => Array.from({ length: 34 }, (_, i) => i), [])
@@ -267,10 +254,14 @@ function Feed({ session }) {
   function openForm() { setAdding(true) }
 
   const lineRows = lineAll ? [...waiting, ...grabbing] : [...waiting, ...grabbing].slice(0, 5)
-  const desktop = useDesktop()
   // something scanned straight into jellyfin or navidrome never went through a request, so no event names who did it.
   // only brandon imports, so credit him: his own id when he's the one looking, otherwise whoever the last import was credited to.
   const adder = isAdmin ? session.user.id : [...events].reverse().find((ev) => ev.event === 'imported')?.actor || null
+  const arrivals = useArrivals(events, rows, ready, adder)
+  // the mark you last left. frozen for this visit so the shelf stays lit while you look; advanced when you dismiss the greeting
+  const seenAtMount = useRef(localStorage.getItem(SEEN_KEY) || '')
+  const isFresh = (a) => !seenAtMount.current || a.at > seenAtMount.current
+  const freshKeys = useMemo(() => new Set(arrivals.filter(isFresh).map((a) => a.row.id)), [arrivals])
   const openRow = open ? (open.fromLibrary ? ready.find((r) => r.id === open.id) || open : rows.find((r) => r.id === open.id) || open) : null
 
   function Row({ r }) {
@@ -361,7 +352,7 @@ function Feed({ session }) {
 
           {/* the shelf */}
           <section className="block">
-            <h2 className="h">the shelf</h2>
+            <h2 className="h">the shelf{freshKeys.size > 0 && <span className="count fresh">{freshKeys.size} new</span>}</h2>
             <div className="shelf-tools">
               <input value={shelfQ} onChange={(e) => { setShelfQ(e.target.value); setShelfPage(1) }} placeholder="search what's been imported" />
               <div className="chips">
@@ -375,7 +366,7 @@ function Feed({ session }) {
             ) : (
               <ul className="shelf">
                 {shelf.slice(0, shelfPage * PAGE).map((r) => (
-                  <li key={r.id} className="row imported" onClick={(e) => { if (!e.target.closest('a,button')) setOpen(r) }}>
+                  <li key={r.id} className={'row imported' + (freshKeys.has(r.id) ? ' fresh' : '')} onClick={(e) => { if (!e.target.closest('a,button')) setOpen(r) }}>
                     {r.poster_url ? <img className="thumb" src={r.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
                     <span className="row-title">{r.title}{r.year ? <span className="year"> {r.year}</span> : null}{r.artist ? <span className="year"> · {r.artist}</span> : null}</span>
                     <span className="row-when">{timeAgo(r.imported_at || r.created_at)}</span>
@@ -390,13 +381,9 @@ function Feed({ session }) {
             </div>
           </section>
         </div>
-
-        <aside className="col-rail rail-desktop">
-          {desktop && <Reel events={events} rows={rows} ready={ready} who={who} adder={adder} inline onOpen={(r) => setOpen(r)} />}
-        </aside>
       </div>
 
-      {!desktop && <Reel events={events} rows={rows} ready={ready} who={who} adder={adder} onOpen={(r) => setOpen(r)} />}
+      <Greeting arrivals={arrivals} isFresh={isFresh} loaded={events.length > 0 || libLoaded} who={who} onOpen={(r) => setOpen(r)} />
 
       {!adding && (
         <button className="fab" onClick={openForm} aria-label="request something">
@@ -432,20 +419,11 @@ function Feed({ session }) {
 const REEL_DAYS = 7 * 24 * 3600 * 1000
 const SEEN_KEY = 'movie-night:reel-seen'
 
-/* new on the shelf: everything that landed in the last 7 days, who put it there, and when.
-   two sources, one list: the request trail (media_events, event = imported) knows the moment reconcile or a scan flipped
-   a request, and the servers themselves (the shelf function) know about anything that was dropped in without a request.
-   desktop renders it inline in the right column with unseen items lit; mobile keeps the edge tab and slide-in tray.
-   toasts fire everywhere for arrivals while the page is open. */
-function Reel({ events, rows, ready, who, adder, inline = false, onOpen }) {
-  const [openTray, setOpenTray] = useState(false)
-  // the mark you last left: frozen at mount so highlights stay put while you look, and only advanced by closing the tray
-  const seenAtMount = useRef(localStorage.getItem(SEEN_KEY) || '')
-  const [seenAt, setSeenAt] = useState(seenAtMount.current)
-  const [toasts, setToasts] = useState([])
-  const known = useRef(null)
-
-  const arrivals = useMemo(() => {
+/* what landed recently, who put it there, and when. two sources, one list: the request trail (media_events, event = imported)
+   knows the moment reconcile or a scan flipped a request, and the servers themselves (the shelf function) know about
+   anything dropped in without a request. rows carry the shelf item when there is one so posters and play links come along. */
+function useArrivals(events, rows, ready, adder) {
+  return useMemo(() => {
     const cutoff = Date.now() - REEL_DAYS
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
     const byLib = Object.fromEntries(ready.filter((r) => r.library_item_id).map((r) => [r.library_item_id, r]))
@@ -465,28 +443,23 @@ function Reel({ events, rows, ready, who, adder, inline = false, onOpen }) {
     }
     return out.sort((a, b) => new Date(b.at) - new Date(a.at))
   }, [events, rows, ready, adder])
+}
 
-  const isFresh = (a) => !seenAtMount.current || a.at > seenAtMount.current
-  const fresh = arrivals.filter((a) => !seenAt || a.at > seenAt).length
-  const loaded = events.length > 0 || ready.length > 0
-
-  // mobile only: first look after arriving on the page, if anything landed since you were last here, show it
+/* the greeting: once, on load, if anything landed since you were last here, a stub that says so and lists it.
+   "got it" (or tapping away) moves the mark. plus toasts for anything that lands while the page is open. */
+function Greeting({ arrivals, isFresh, loaded, who, onOpen }) {
+  const [show, setShow] = useState(false)
+  const [toasts, setToasts] = useState([])
+  const known = useRef(null)
   const greeted = useRef(false)
-  useEffect(() => {
-    if (inline || greeted.current || !loaded) return
-    greeted.current = true
-    if (fresh > 0) setOpenTray(true)
-  }, [inline, loaded, fresh])
 
-  // desktop only: the list is already in view, so a few seconds after it renders count it as seen for next time.
-  // highlights stay lit for this visit because they're measured against the mark from mount.
+  const fresh = arrivals.filter(isFresh)
+
   useEffect(() => {
-    if (!inline || !loaded || !arrivals.length) return
-    const latest = arrivals[0].at
-    if (seenAt && latest <= seenAt) return
-    const t = setTimeout(() => { localStorage.setItem(SEEN_KEY, latest); setSeenAt(latest) }, 4000)
-    return () => clearTimeout(t)
-  }, [inline, loaded, arrivals, seenAt])
+    if (greeted.current || !loaded) return
+    greeted.current = true
+    if (fresh.length > 0) setShow(true)
+  }, [loaded, fresh.length])
 
   // toast anything that arrives after first load
   useEffect(() => {
@@ -500,108 +473,79 @@ function Reel({ events, rows, ready, who, adder, inline = false, onOpen }) {
     for (const n of newOnes) setTimeout(() => setToasts((t) => t.filter((x) => x.id !== n.id)), 7000)
   }, [arrivals, loaded])
 
-  function markSeen() {
-    const latest = arrivals[0]?.at || new Date().toISOString()
-    localStorage.setItem(SEEN_KEY, latest)
-    setSeenAt(latest)
-    seenAtMount.current = latest
+  function dismiss() {
+    localStorage.setItem(SEEN_KEY, arrivals[0]?.at || new Date().toISOString())
+    setShow(false)
   }
-  function close() { markSeen(); setOpenTray(false) }
-  function toggle() { openTray ? close() : setOpenTray(true) }
 
   useEffect(() => {
-    if (!openTray) return
-    const onKey = (e) => e.key === 'Escape' && close()
+    if (!show) return
+    const onKey = (e) => e.key === 'Escape' && dismiss()
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [openTray])
+    document.body.style.overflow = 'hidden'
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = '' }
+  }, [show])
 
   const name = (a) => (a.actor ? who(a.actor) : null)
   const line = (a) => <>{name(a) ? <><strong>{name(a)}</strong> added </> : 'now on the shelf: '}<em>{a.row.title}</em></>
 
-  const toastEl = (
-    <div className="reel-toasts" aria-live="polite">
-      {toasts.map(({ id, a }) => (
-        <button key={id} className="reel-toast" onClick={() => { setToasts((t) => t.filter((x) => x.id !== id)); onOpen(a.row) }}>
-          {a.row.poster_url ? <img src={a.row.poster_url} alt="" /> : <span className="thumb blank" />}
-          <span>
-            <span className="reel-line">{line(a)}</span>
-            <span className="reel-when">{when(a.at)}</span>
-          </span>
-        </button>
-      ))}
-    </div>
-  )
+  // "2 movies and an album"
+  const summary = (() => {
+    const n = { movie: 0, show: 0, album: 0 }
+    for (const a of fresh) if (a.row.type in n) n[a.row.type]++
+    const parts = TYPES.filter((t) => n[t]).map((t) => n[t] === 1 ? `${t === 'album' ? 'an' : 'a'} ${t}` : `${n[t]} ${t}s`)
+    return parts.length <= 1 ? parts[0] || '' : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1]
+  })()
 
-  const list = (
-    <ReelList arrivals={arrivals} isFresh={isFresh} name={name} loaded={loaded} onPick={(a) => { if (!inline) close(); onOpen(a.row) }} />
-  )
-
-  if (inline) {
-    return (
-      <>
-        <div className="new-shelf">
-          <h2 className="h">new on the shelf{arrivals.some(isFresh) && <span className="count fresh">{arrivals.filter(isFresh).length} new</span>}</h2>
-          {list}
-        </div>
-        {toastEl}
-      </>
-    )
-  }
+  const groups = TYPES.map((t) => [t, fresh.filter((a) => a.row.type === t)]).filter(([, l]) => l.length)
 
   return (
     <>
-      <button className={'reel-tab' + (fresh ? ' fresh' : '')} onClick={toggle} aria-label="new on the shelf">
-        <span className="reel-icon" aria-hidden="true">&#9654;</span>
-        new on the shelf
-        {fresh > 0 && <span className="reel-count">{fresh}</span>}
-      </button>
+      <div className="reel-toasts" aria-live="polite">
+        {toasts.map(({ id, a }) => (
+          <button key={id} className="reel-toast" onClick={() => { setToasts((t) => t.filter((x) => x.id !== id)); onOpen(a.row) }}>
+            {a.row.poster_url ? <img src={a.row.poster_url} alt="" /> : <span className="thumb blank" />}
+            <span>
+              <span className="reel-line">{line(a)}</span>
+              <span className="reel-when">{when(a.at)}</span>
+            </span>
+          </button>
+        ))}
+      </div>
 
-      {toastEl}
-
-      {openTray && (
-        <div className="reel-wrap" onClick={close}>
-          <aside className="reel" role="dialog" aria-label="new on the shelf" onClick={(e) => e.stopPropagation()}>
-            <div className="reel-head">
-              <h2 className="h">new on the shelf</h2>
-              <button className="link" onClick={close}>close</button>
+      {show && (
+        <div className="greet-wrap" onClick={dismiss}>
+          <section className="greet stub tear" role="dialog" aria-label="since you were last here" onClick={(e) => e.stopPropagation()}>
+            <p className="greet-kicker">since you were last here</p>
+            <h2 className="greet-title">{summary} landed on the shelf</h2>
+            <div className="reel-groups">
+              {groups.map(([t, list]) => (
+                <div key={t} className="reel-group">
+                  <div className="reel-type">{t}s</div>
+                  <ul className="reel-list">
+                    {list.map((a) => (
+                      <li key={a.id}>
+                        <button className="reel-item" onClick={() => { dismiss(); onOpen(a.row) }}>
+                          {a.row.poster_url ? <img src={a.row.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
+                          <span className="reel-body">
+                            <span className="reel-title">{a.row.title}{a.row.artist ? <span className="reel-sub"> {a.row.artist}</span> : null}</span>
+                            <span className="reel-when">{name(a) ? `${name(a)} added it, ` : ''}{when(a.at)}</span>
+                          </span>
+                          {a.row.play_url && <a className="btn tiny" href={a.row.play_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>play</a>}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </div>
-            {list}
-          </aside>
+            <div className="actions">
+              <button className="primary" onClick={dismiss}>got it</button>
+            </div>
+          </section>
         </div>
       )}
     </>
-  )
-}
-
-/* the list itself, grouped by type like "just added" was. the same markup sits on the dark page (desktop) and in the
-   parchment tray (mobile); index.css recolours it inside .reel */
-function ReelList({ arrivals, isFresh, name, loaded, onPick }) {
-  if (!loaded) return <p className="hint dim">checking the shelf</p>
-  if (arrivals.length === 0) return <p className="hint dim">nothing new this week</p>
-  const groups = TYPES.map((t) => [t, arrivals.filter((a) => a.row.type === t)]).filter(([, l]) => l.length)
-  return (
-    <div className="reel-groups">
-      {groups.map(([t, list]) => (
-        <div key={t} className="reel-group">
-          <div className="reel-type">{t}s</div>
-          <ul className="reel-list">
-            {list.map((a) => (
-              <li key={a.id}>
-                <button className={'reel-item' + (isFresh(a) ? ' fresh' : '')} onClick={() => onPick(a)}>
-                  {a.row.poster_url ? <img src={a.row.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
-                  <span className="reel-body">
-                    <span className="reel-title">{a.row.title}{a.row.artist ? <span className="reel-sub"> {a.row.artist}</span> : null}</span>
-                    <span className="reel-when">{name(a) ? `${name(a)} added it, ` : ''}{when(a.at)}</span>
-                  </span>
-                  {a.row.play_url && <a className="btn tiny" href={a.row.play_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>play</a>}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </div>
   )
 }
 
