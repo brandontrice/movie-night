@@ -272,3 +272,14 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--bulb); outline-
   .bulb { opacity: 1; }
   .stamp { transform: none; }
 }
+
+/* v4: tap-to-add results */
+.results button .go {
+  margin-left: auto; flex: none; font-size: 13px; font-weight: 700;
+  color: var(--curtain); border: 1.5px solid var(--curtain); border-radius: 999px; padding: 2px 10px;
+  transition: background 0.15s, color 0.15s;
+}
+.results button:hover .go { background: var(--curtain); color: #fff; }
+.results button:disabled { opacity: 0.6; cursor: default; }
+.link.tiny { font-size: 14px; padding: 0; justify-self: start; }
+.stub-form.adding { animation: pulse 0.9s ease-in-out infinite; }

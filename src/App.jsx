@@ -270,15 +270,14 @@ function Feed({ session }) {
 function AddForm({ user, type, onDone }) {
   const [q, setQ] = useState('')
   const [results, setResults] = useState({ candidates: [], owned: [] })
-  const [pick, setPick] = useState(null)
   const [note, setNote] = useState('')
+  const [showNote, setShowNote] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [looking, setLooking] = useState(false)
   const timer = useRef()
 
   useEffect(() => {
-    setPick(null)
     clearTimeout(timer.current)
     if (q.trim().length < 2) return setResults({ candidates: [], owned: [] })
     timer.current = setTimeout(async () => {
@@ -290,19 +289,18 @@ function AddForm({ user, type, onDone }) {
     return () => clearTimeout(timer.current)
   }, [q, type])
 
-  async function submit(e) {
-    e.preventDefault()
-    const row = pick || { title: q.trim(), year: null, artist: null, poster_url: null, external_id: null }
-    if (!row.title) return
+  // tapping a result adds it straight away
+  async function add(row) {
+    if (busy || !row.title) return
     setBusy(true)
     setError('')
     const { error } = await supabase.from('media_requests').insert({
       type,
       title: row.title,
       year: row.year ? Number(row.year) : null,
-      artist: row.artist,
-      poster_url: row.poster_url,
-      external_id: row.external_id,
+      artist: row.artist ?? null,
+      poster_url: row.poster_url ?? null,
+      external_id: row.external_id ?? null,
       note: note.trim() || null,
       requested_by: user.id,
     })
@@ -311,14 +309,25 @@ function AddForm({ user, type, onDone }) {
     onDone()
   }
 
+  const noMatches = !looking && q.trim().length >= 2 && results.candidates.length === 0
+
   return (
-    <form onSubmit={submit} className="stub stub-form tear">
+    <form onSubmit={(e) => { e.preventDefault(); if (noMatches) add({ title: q.trim() }) }} className={'stub stub-form tear' + (busy ? ' adding' : '')}>
       <label>
         {type === 'album' ? 'album or artist' : 'title'}
         <input value={q} onChange={(e) => setQ(e.target.value)} autoFocus placeholder={type === 'album' ? 'continuum' : type === 'show' ? 'the bear' : 'the notebook'} />
       </label>
 
-      {results.owned.length > 0 && !pick && (
+      {showNote ? (
+        <label>
+          anything else
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="the one with ryan gosling" autoFocus />
+        </label>
+      ) : (
+        <button type="button" className="link tiny" onClick={() => setShowNote(true)}>add a note</button>
+      )}
+
+      {results.owned.length > 0 && (
         <div className="owned">
           <div>already on the shelf</div>
           {results.owned.map((o) => (
@@ -329,46 +338,41 @@ function AddForm({ user, type, onDone }) {
         </div>
       )}
 
-      {looking && !pick && (
+      {looking && (
         <ul className="results skeleton" aria-hidden="true">
           <li /><li /><li />
         </ul>
       )}
 
-      {!looking && !pick && results.candidates.length > 0 && (
-        <ul className="results">
-          {results.candidates.map((c, i) => (
-            <li key={c.external_id} style={{ '--i': i }}>
-              <button type="button" onClick={() => { setPick(c); setQ(c.title) }}>
-                {c.poster_url ? <img src={c.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="noposter" />}
-                <span>
-                  <strong>{c.title}</strong>{c.year ? ` ${c.year}` : ''}
-                  {c.artist && <em>{c.artist}</em>}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {!looking && !pick && q.trim().length >= 2 && results.candidates.length === 0 && (
-        <p className="hint">no matches, but you can still add it as typed</p>
+      {!looking && results.candidates.length > 0 && (
+        <>
+          <p className="hint">tap one to add it</p>
+          <ul className="results">
+            {results.candidates.map((c, i) => (
+              <li key={c.external_id} style={{ '--i': i }}>
+                <button type="button" disabled={busy} onClick={() => add(c)}>
+                  {c.poster_url ? <img src={c.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="noposter" />}
+                  <span>
+                    <strong>{c.title}</strong>{c.year ? ` ${c.year}` : ''}
+                    {c.artist && <em>{c.artist}</em>}
+                  </span>
+                  <span className="go">add</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
-      {pick && (
-        <div className="picked">
-          {pick.poster_url && <img src={pick.poster_url} alt="" />}
-          <span><strong>{pick.title}</strong>{pick.year ? ` ${pick.year}` : ''}{pick.artist ? `, ${pick.artist}` : ''}</span>
-          <button type="button" className="link" onClick={() => setPick(null)}>change</button>
+      {noMatches && (
+        <div className="actions">
+          <p className="hint">no matches for that</p>
+          <button type="submit" className="primary" disabled={busy}>{busy ? 'adding' : `add "${q.trim()}" anyway`}</button>
         </div>
       )}
 
-      <label>
-        anything else
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="the one with ryan gosling" />
-      </label>
       {error && <p className="error">{error}</p>}
       <div className="actions">
-        <button type="submit" className="primary" disabled={busy || q.trim().length === 0}>{busy ? 'adding' : 'add to the list'}</button>
         <button type="button" className="link" onClick={onDone}>cancel</button>
       </div>
     </form>
