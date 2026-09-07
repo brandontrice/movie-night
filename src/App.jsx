@@ -17,13 +17,21 @@ const TRAIL = {
   watched: (who) => `${who} watched it`,
 }
 
-// "31 movies, 2 shows and 46 albums" from what's actually on the servers
-function shelfSummary(ready) {
+// the numbers under the sign: what's waiting, then what's on the shelf by type
+function Tagline({ pending, ready }) {
   const n = { movie: 0, show: 0, album: 0 }
   for (const r of ready) if (r.type in n) n[r.type]++
-  const parts = TYPES.filter((t) => n[t]).map((t) => `${n[t]} ${t}${n[t] === 1 ? '' : 's'}`)
-  if (!parts.length) return 'nothing'
-  return parts.length === 1 ? parts[0] : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1]
+  const bits = [[pending, 'in line'], ...TYPES.filter((t) => n[t]).map((t) => [n[t], `${t}${n[t] === 1 ? '' : 's'}`])]
+  return (
+    <p className="tagline">
+      {bits.map(([num, label], i) => (
+        <span key={label} className="tag-bit">
+          {i > 0 && <span className="tag-sep" aria-hidden="true">&middot;</span>}
+          <strong>{num}</strong> {label}
+        </span>
+      ))}
+    </p>
+  )
 }
 
 function timeAgo(iso) {
@@ -62,15 +70,28 @@ function seededShuffle(list, seed) {
   return a
 }
 
-/* the sign over the door: a ring of bulbs that chase on, then twinkle */
+/* the sign over the door: a ring of bulbs around a black-and-gold board that chase on, then keep chasing */
+const TOP = 19, SIDE = 3
 function Marquee({ children }) {
-  const bulbs = useMemo(() => Array.from({ length: 34 }, (_, i) => i), [])
+  const bulbs = useMemo(() => {
+    const out = []
+    let n = 0
+    const put = (x, y) => out.push({ i: n, x, y, p: n++ % 3 })
+    for (let k = 0; k < TOP; k++) put((k + 0.5) / TOP * 100, 0)             // across the top
+    for (let k = 1; k <= SIDE; k++) put(100, k / (SIDE + 1) * 100)         // down the right
+    for (let k = TOP - 1; k >= 0; k--) put((k + 0.5) / TOP * 100, 100)     // back along the bottom
+    for (let k = SIDE; k >= 1; k--) put(0, k / (SIDE + 1) * 100)           // up the left
+    return out
+  }, [])
   return (
     <div className="board">
-      <div className="bulbs" aria-hidden="true">
-        {bulbs.map((i) => <span key={i} className="bulb" style={{ '--i': i }} />)}
+      <div className="board-glow" aria-hidden="true" />
+      <div className="board-inner">
+        <div className="bulbs" aria-hidden="true">
+          {bulbs.map((b) => <span key={b.i} className="bulb" style={{ '--i': b.i, '--p': b.p, left: `${b.x}%`, top: `${b.y}%` }} />)}
+        </div>
+        <div className="board-face">{children}</div>
       </div>
-      <div className="board-inner">{children}</div>
       <div className="valance" aria-hidden="true" />
     </div>
   )
@@ -299,9 +320,9 @@ function Feed({ session }) {
     <main className="queue">
       <Marquee>
         <h1 className="marquee">movie night</h1>
-        <p className="tagline">
-          {rows.length === 0 ? 'nothing on the list yet' : `${waiting.length} in line, ${grabbing.length} grabbing, ${shelfSummary(ready)} on the shelf`}
-        </p>
+        {rows.length === 0 && ready.length === 0
+          ? <p className="tagline">nothing on the list yet</p>
+          : <Tagline pending={pending.length} ready={ready} />}
       </Marquee>
 
       {adding && (

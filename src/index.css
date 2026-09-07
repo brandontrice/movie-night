@@ -39,53 +39,103 @@ body::before {
 
 main { position: relative; z-index: 1; max-width: 620px; margin: 0 auto; padding: 20px 16px 110px; }
 
-/* ---------- the marquee board ---------- */
+/* ---------- the marquee board: black lacquer, gold leaf, a ring of chasing bulbs ---------- */
 .board { position: relative; margin: 0 0 22px; }
+/* the spill of light the sign throws on the wall behind it */
+.board-glow {
+  position: absolute; inset: -40px -30px -20px; pointer-events: none;
+  background: radial-gradient(60% 70% at 50% 45%, rgba(255, 209, 102, 0.16), rgba(255, 209, 102, 0.05) 45%, transparent 70%);
+  filter: blur(6px);
+  animation: glow-breathe 5s ease-in-out infinite;
+}
+@keyframes glow-breathe { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }
+/* the gilt frame */
 .board-inner {
+  position: relative; z-index: 1;
+  padding: 11px;
+  border-radius: 18px;
+  background:
+    linear-gradient(160deg, #f6dc8a 0%, #b8902f 18%, #f3d27a 34%, #8a6a1f 52%, #e9c869 70%, #a37f2a 86%, #f1cf73 100%);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.6),
+    0 2px 0 rgba(255, 236, 170, 0.35) inset,
+    0 -2px 0 rgba(60, 40, 0, 0.5) inset;
+}
+/* the black lacquer face */
+.board-face {
   position: relative;
-  background: var(--board);
-  border-radius: 14px;
-  padding: 34px 20px 30px;
+  border-radius: 10px;
+  padding: 36px 24px 30px;
   text-align: center;
-  box-shadow: inset 0 0 0 2px #2a2437, 0 18px 40px rgba(0, 0, 0, 0.5);
+  background:
+    radial-gradient(120% 90% at 50% -20%, rgba(255, 209, 102, 0.12), transparent 55%),
+    linear-gradient(180deg, #14101d, var(--board) 60%, #07060b);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 220, 130, 0.35),
+    inset 0 0 0 3px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 4px rgba(255, 220, 130, 0.14),
+    inset 0 30px 60px rgba(0, 0, 0, 0.55);
 }
-.bulbs {
-  position: absolute; inset: 8px 10px; z-index: 2; pointer-events: none;
-  display: grid; grid-template-columns: repeat(17, 1fr); grid-template-rows: auto auto;
-  align-content: space-between; justify-items: center;
-}
+/* bulbs sit on the frame, in a ring */
+.bulbs { position: absolute; inset: 5px 6px; z-index: 2; pointer-events: none; }
 .bulb {
-  width: 9px; height: 9px; border-radius: 50%;
-  background: var(--bulb);
-  opacity: 0.18;
+  position: absolute; width: 10px; height: 10px; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle at 40% 35%, #fff6d6, var(--bulb) 55%, #c9962b);
+  opacity: 0.22;
   animation:
-    light-up 0.35s calc(var(--i) * 38ms) both,
-    twinkle 3.4s calc(1.6s + var(--i) * 131ms) ease-in-out infinite;
+    light-up 0.35s calc(var(--i) * 30ms) both,
+    chase 1.5s calc(1.6s + var(--p) * -0.5s) steps(1) infinite;
+}
+.bulb::after {
+  content: ''; position: absolute; inset: -1px; border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(80, 55, 10, 0.6);
 }
 @keyframes light-up {
-  from { opacity: 0.18; box-shadow: none; }
-  to   { opacity: 1; box-shadow: 0 0 8px 1px rgba(255, 209, 102, 0.8); }
+  from { opacity: 0.22; box-shadow: none; }
+  to   { opacity: 1; box-shadow: 0 0 10px 2px rgba(255, 209, 102, 0.85); }
 }
-@keyframes twinkle {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
+/* three-phase chase: each bulb is full, then warm, then dim, offset from its neighbours so the light runs round the frame */
+@keyframes chase {
+  0%       { opacity: 1;    box-shadow: 0 0 12px 3px rgba(255, 209, 102, 0.9); }
+  33.333%  { opacity: 0.55; box-shadow: 0 0 6px 1px rgba(255, 209, 102, 0.45); }
+  66.666%  { opacity: 0.28; box-shadow: none; }
 }
+/* the name in gold leaf, with a slow shimmer crossing the letters */
 .marquee {
   font-family: var(--font-display);
   font-weight: 400;
-  font-size: clamp(42px, 10vw, 66px);
+  font-size: clamp(44px, 10vw, 70px);
   line-height: 1;
   margin: 0;
   color: var(--bulb);
-  text-shadow: 0 0 22px rgba(255, 209, 102, 0.45), 0 0 3px rgba(255, 209, 102, 0.9);
-  animation: glow-in 1.2s 0.4s both;
+  background: linear-gradient(100deg, #f9e6a3 0%, #ffd166 22%, #c99a34 40%, #ffe9a8 52%, #c99a34 64%, #ffd166 78%, #f9e6a3 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 18px rgba(255, 209, 102, 0.45)) drop-shadow(0 2px 0 rgba(0, 0, 0, 0.6));
+  animation: glow-in 1.2s 0.4s both, shimmer 7s 1.6s ease-in-out infinite;
 }
-@keyframes glow-in { from { opacity: 0.3; filter: blur(2px); } to { opacity: 1; filter: blur(0); } }
-.tagline { margin: 8px 0 0; color: var(--stub-edge); font-size: 15px; }
+@keyframes glow-in { from { opacity: 0.3; filter: blur(2px); } to { opacity: 1; } }
+@keyframes shimmer { 0%, 100% { background-position: 100% 0; } 50% { background-position: 0% 0; } }
+/* the numbers, set like a bill: small caps, tracked out, gold rules either side */
+.tagline {
+  margin: 14px auto 0; max-width: 560px;
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap; column-gap: 0; row-gap: 4px;
+  color: var(--stub-edge); font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase;
+}
+.tagline::before, .tagline::after {
+  content: ''; flex: 1 1 24px; max-width: 70px; height: 1px; margin: 0 14px;
+  background: linear-gradient(90deg, transparent, rgba(255, 209, 102, 0.55));
+}
+.tagline::after { background: linear-gradient(90deg, rgba(255, 209, 102, 0.55), transparent); }
+.tag-bit { display: inline-flex; align-items: center; white-space: nowrap; }
+.tag-bit strong { color: var(--bulb); font-weight: 700; margin-right: 0.4em; }
+.tag-sep { color: rgba(255, 209, 102, 0.6); margin: 0 10px; }
 
 /* velvet valance under the board, scalloped hem */
 .valance {
-  height: 22px; margin: -6px 10px 0; position: relative; z-index: 1;
+  height: 22px; margin: -8px 14px 0; position: relative; z-index: 0;
+  box-shadow: inset 0 3px 0 rgba(255, 209, 102, 0.55), inset 0 4px 0 rgba(120, 80, 10, 0.6), 0 8px 18px rgba(0, 0, 0, 0.45);
   background: linear-gradient(90deg, var(--curtain-deep) 0 6%, var(--curtain) 6% 12%, var(--curtain-deep) 12% 18%, var(--curtain) 18% 24%, var(--curtain-deep) 24% 30%, var(--curtain) 30% 36%, var(--curtain-deep) 36% 42%, var(--curtain) 42% 48%, var(--curtain-deep) 48% 54%, var(--curtain) 54% 60%, var(--curtain-deep) 60% 66%, var(--curtain) 66% 72%, var(--curtain-deep) 72% 78%, var(--curtain) 78% 84%, var(--curtain-deep) 84% 90%, var(--curtain) 90% 96%, var(--curtain-deep) 96% 100%);
   border-radius: 0 0 6px 6px;
 }
@@ -269,7 +319,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--bulb); outline-
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
-  .bulb { opacity: 1; }
+  .bulb { opacity: 1; box-shadow: 0 0 8px 1px rgba(255, 209, 102, 0.6); }
+  .marquee { animation: none; filter: drop-shadow(0 0 18px rgba(255, 209, 102, 0.45)); }
   .stamp { transform: none; }
 }
 
