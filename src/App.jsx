@@ -117,6 +117,8 @@ function SignIn() {
 }
 
 const NINETY_DAYS = 90 * 24 * 3600 * 1000
+const RECENT = 72 * 3600 * 1000
+const isRecent = (r) => Date.now() - new Date(r.imported_at || r.created_at).getTime() < RECENT
 const PAGE = 20
 
 function Feed({ session }) {
@@ -371,6 +373,7 @@ function Feed({ session }) {
                   <li key={r.id} className={'row imported' + (freshKeys.has(r.id) ? ' fresh' : '')} onClick={(e) => { if (!e.target.closest('a,button')) setOpen(r) }}>
                     {r.poster_url ? <img className="thumb" src={r.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
                     <span className="row-title">{r.title}{r.year ? <span className="year"> {r.year}</span> : null}{r.artist ? <span className="year"> · {r.artist}</span> : null}</span>
+                    {isRecent(r) && <span className="tag new">new</span>}
                     <span className="row-when">{timeAgo(r.imported_at || r.created_at)}</span>
                     {r.play_url && <a className="btn tiny" href={r.play_url} target="_blank" rel="noreferrer">play</a>}
                   </li>

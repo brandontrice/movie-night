@@ -432,6 +432,11 @@ main { max-width: 980px; }
 /* the shelf: lit until you've had a look */
 .h .count.fresh { background: var(--curtain); color: #fff; animation: thud 0.55s cubic-bezier(0.3, 1.4, 0.4, 1) both; }
 .shelf .row.fresh { box-shadow: inset 4px 0 0 var(--bulb); background: rgba(255, 209, 102, 0.16); }
+/* landed in the last 72 hours */
+.tag.new {
+  flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink); background: var(--bulb); border-radius: 4px; padding: 1px 6px; line-height: 16px;
+}
 .shelf-tools { display: grid; gap: 8px; margin-bottom: 10px; }
 .shelf-tools input { background: rgba(246, 236, 216, 0.08); border-color: rgba(246, 236, 216, 0.2); color: var(--stub); }
 .shelf-tools input::placeholder { color: rgba(246, 236, 216, 0.45); }
