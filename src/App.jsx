@@ -4,6 +4,10 @@ import { supabase } from './lib/supabase'
 const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || '').toLowerCase()
 const GRAB_URL = import.meta.env.VITE_GRAB_URL || 'https://duckduckgo.com/?q={q}'
 const TYPES = ['movie', 'show', 'album']
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
+// album art comes through the shelf function so navidrome credentials stay on the server
+const art = (u) => (u && u.startsWith('art:') ? `${SUPABASE_URL}/functions/v1/shelf?apikey=${encodeURIComponent(ANON)}&art=${encodeURIComponent(u.slice(4))}` : u)
 
 const READY = { movie: 'ready to watch', show: 'ready to watch', album: 'ready to listen' }
 const TRAIL = {
@@ -97,6 +101,8 @@ function Feed({ session }) {
   const [shelfType, setShelfType] = useState('all')
   const [shelfOlder, setShelfOlder] = useState(false)
   const [shelfPage, setShelfPage] = useState(1)
+  const [library, setLibrary] = useState([])
+  const [libLoaded, setLibLoaded] = useState(false)
   const detailCache = useRef({})
   const seen = useRef(null)
   const prevStatus = useRef({})
@@ -114,6 +120,7 @@ function Feed({ session }) {
       if (was && was !== x.status) changed[x.id] = true
       prevStatus.current[x.id] = x.status
     }
+    if (Object.values(changed).length && list.some((x) => changed[x.id] && x.status === 'imported')) loadLibrary()
     if (Object.keys(changed).length) {
       setThud((t) => ({ ...t, ...changed }))
       setTimeout(() => setThud((t) => { const n = { ...t }; for (const k in changed) delete n[k]; return n }), 900)
@@ -122,7 +129,14 @@ function Feed({ session }) {
     setEvents(e.data || [])
   }
 
+  async function loadLibrary() {
+    const { data } = await supabase.functions.invoke('shelf', { body: {} })
+    setLibrary((data?.items || []).map((i) => ({ ...i, id: i.key, poster_url: art(i.poster_url), status: 'imported', imported_at: i.added_at, created_at: i.added_at, fromLibrary: true })))
+    setLibLoaded(true)
+  }
+
   useEffect(() => {
+    loadLibrary()
     supabase.from('profiles').select('*').then(({ data }) => {
       const map = {}
       for (const p of data || []) map[p.user_id] = p
@@ -149,10 +163,15 @@ function Feed({ session }) {
   const pending = useMemo(() => rows.filter((r) => r.status !== 'imported'), [rows])
   const waiting = pending.filter((r) => r.status === 'requested')
   const grabbing = pending.filter((r) => r.status === 'grabbed')
-  const ready = useMemo(
-    () => rows.filter((r) => r.status === 'imported').sort((a, b) => (b.imported_at || b.created_at).localeCompare(a.imported_at || a.created_at)),
-    [rows]
-  )
+  // what's actually on the servers, with the matching request attached when there is one
+  const ready = useMemo(() => {
+    const byItem = {}
+    for (const r of rows) if (r.status === 'imported' && r.library_item_id) byItem[r.library_item_id] = r
+    return library.map((i) => {
+      const req = byItem[i.library_item_id]
+      return req ? { ...i, requested_by: req.requested_by, note: req.note, request_id: req.id, external_id: i.external_id || req.external_id } : i
+    })
+  }, [library, rows])
   const nowShowing = ready.slice(0, 8)
   const justAdded = useMemo(() => {
     const by = {}
@@ -185,7 +204,7 @@ function Feed({ session }) {
   function openForm() { setAdding(true) }
 
   const lineRows = lineAll ? [...waiting, ...grabbing] : [...waiting, ...grabbing].slice(0, 5)
-  const openRow = open ? rows.find((r) => r.id === open.id) || open : null
+  const openRow = open ? (open.fromLibrary ? ready.find((r) => r.id === open.id) || open : rows.find((r) => r.id === open.id) || open) : null
 
   function Row({ r }) {
     const p = profiles[r.requested_by]
@@ -236,7 +255,7 @@ function Feed({ session }) {
           <section className="block">
             <h2 className="h">now showing</h2>
             {nowShowing.length === 0 ? (
-              <p className="hint dim">nothing ready yet. the first thing brandon imports lands here.</p>
+              <p className="hint dim">{libLoaded ? 'nothing on the servers yet' : 'checking the shelf'}</p>
             ) : (
               <ul className="rail">
                 {nowShowing.map((r, i) => (
@@ -283,7 +302,7 @@ function Feed({ session }) {
               </div>
             </div>
             {shelf.length === 0 ? (
-              <p className="hint dim">{ready.length === 0 ? 'nothing imported yet' : 'nothing matches'}</p>
+              <p className="hint dim">{!libLoaded ? 'checking the shelf' : ready.length === 0 ? 'nothing on the servers yet' : 'nothing matches'}</p>
             ) : (
               <ul className="shelf">
                 {shelf.slice(0, shelfPage * PAGE).map((r) => (
@@ -317,7 +336,7 @@ function Feed({ session }) {
       {openRow && (
         <Sheet
           row={openRow}
-          trail={trailFor[openRow.id] || []}
+          trail={trailFor[openRow.request_id || openRow.id] || []}
           who={who}
           cache={detailCache}
           isAdmin={isAdmin}
