@@ -89,6 +89,8 @@ function Feed({ session }) {
   const [type, setType] = useState('movie')
   const [scanning, setScanning] = useState({})
   const [thud, setThud] = useState({})
+  const [open, setOpen] = useState(null)
+  const detailCache = useRef({})
   const seen = useRef(null)
   const prevStatus = useRef({})
 
@@ -205,7 +207,7 @@ function Feed({ session }) {
           const isNew = seen.current && !seen.current.has(r.id)
           if (isNew) seen.current.add(r.id)
           return (
-            <li key={r.id} className={'stub ' + r.status + (isNew ? ' tear' : '')}>
+            <li key={r.id} className={'stub peekable ' + r.status + (isNew ? ' tear' : '')} onClick={(e) => { if (!e.target.closest('a,button')) setOpen(r) }}>
               {r.poster_url ? <img className="poster" src={r.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <div className="poster blank" />}
               <div className="body">
                 <div className="byline">
@@ -260,10 +262,117 @@ function Feed({ session }) {
         </button>
       )}
 
+      {open && (
+        <Sheet
+          row={rows.find((r) => r.id === open.id) || open}
+          trail={trailFor[open.id] || []}
+          who={who}
+          cache={detailCache}
+          isAdmin={isAdmin}
+          scanning={!!scanning[open.id]}
+          onGrabbed={() => setStatus(open.id, 'grabbed')}
+          onImported={() => markImported(open.id)}
+          onClose={() => setOpen(null)}
+        />
+      )}
+
       <footer className="foot">
         <button className="link" onClick={() => supabase.auth.signOut()}>sign out</button>
       </footer>
     </main>
+  )
+}
+
+function Sheet({ row, trail, who, cache, isAdmin, scanning, onGrabbed, onImported, onClose }) {
+  const [d, setD] = useState(cache.current[row.id] ?? null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    document.body.style.overflow = 'hidden'
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = '' }
+  }, [onClose])
+
+  useEffect(() => {
+    if (d || !row.external_id) return
+    supabase.functions.invoke('details', { body: { type: row.type, external_id: row.external_id } }).then(({ data, error }) => {
+      if (error || !data || data.error) return setFailed(true)
+      cache.current[row.id] = data
+      setD(data)
+    })
+  }, [row.id])
+
+  const metaBits = d ? [
+    d.year,
+    d.runtime ? `${d.runtime} min` : null,
+    d.seasons ? `${d.seasons} season${d.seasons === 1 ? '' : 's'}` : null,
+    d.rating,
+    d.score ? `${d.score}/10` : null,
+    d.label,
+  ].filter(Boolean) : []
+
+  return (
+    <div className="sheet-wrap" onClick={onClose}>
+      <section className="sheet" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-hero" style={d?.backdrop_url ? { backgroundImage: `url(${d.backdrop_url})` } : undefined}>
+          <button className="sheet-close" onClick={onClose} aria-label="close">close</button>
+          {(d?.poster_url || row.poster_url) && <img className="sheet-poster" src={d?.poster_url || row.poster_url} alt="" onError={(e) => (e.currentTarget.style.display = 'none')} />}
+          <div className="sheet-titles">
+            <h2>{row.title}</h2>
+            {row.artist && <div className="sheet-sub">{row.artist}</div>}
+            {d?.tagline && <div className="sheet-tag">{d.tagline}</div>}
+          </div>
+        </div>
+
+        <div className="sheet-body">
+          {metaBits.length > 0 && <p className="sheet-meta">{metaBits.join(' / ')}</p>}
+          {d?.genres?.length > 0 && (
+            <div className="chips small">{d.genres.map((g) => <span key={g} className="chip static">{g}</span>)}</div>
+          )}
+          {d?.overview && <p className="sheet-overview">{d.overview}</p>}
+          {d?.director && row.type !== 'album' && <p className="sheet-line"><span>directed by</span> {d.director}</p>}
+          {d?.cast?.length > 0 && (
+            <p className="sheet-line"><span>with</span> {d.cast.map((c) => c.name).join(', ')}</p>
+          )}
+          {d?.tracks?.length > 0 && (
+            <ol className="tracks">
+              {d.tracks.map((t) => (
+                <li key={t.n}><span className="n">{t.n}</span>{t.title}{t.length && <span className="len">{t.length}</span>}</li>
+              ))}
+            </ol>
+          )}
+          {!d && !failed && row.external_id && <ul className="results skeleton" aria-hidden="true"><li /><li /></ul>}
+          {!d && (failed || !row.external_id) && <p className="hint">no extra details for this one</p>}
+          {row.note && <p className="note">{row.note}</p>}
+
+          <ol className="trail">
+            {trail.map((ev) => (
+              <li key={ev.id} className={ev.event}>
+                {TRAIL[ev.event](who(ev.actor), row)}
+                <span className="when">{timeAgo(ev.at)}</span>
+              </li>
+            ))}
+          </ol>
+
+          <div className="actions">
+            {row.status === 'imported' && row.play_url ? (
+              <a className="primary" href={row.play_url} target="_blank" rel="noreferrer">{READY[row.type]}, play it</a>
+            ) : row.status === 'imported' ? (
+              <span className="stamp imported">{READY[row.type]}</span>
+            ) : isAdmin ? (
+              <>
+                <a className="btn" href={GRAB_URL.replace('{q}', encodeURIComponent([row.artist, row.title, row.year].filter(Boolean).join(' ')))} target="_blank" rel="noreferrer">grab</a>
+                {row.status === 'requested' && <button className="btn" onClick={onGrabbed}>grabbed</button>}
+                <button className={'btn' + (scanning ? ' busy' : '')} disabled={scanning} onClick={onImported}>{scanning ? 'scanning the shelf' : 'imported'}</button>
+              </>
+            ) : (
+              <span className={'stamp ' + row.status}>{row.status === 'grabbed' ? 'grabbing it' : 'on the list'}</span>
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
   )
 }
 
