@@ -29,6 +29,10 @@ function timeAgo(iso) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+function when(iso) {
+  return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).toLowerCase()
+}
+
 /* the sign over the door: a ring of bulbs that chase on, then twinkle */
 function Marquee({ children }) {
   const bulbs = useMemo(() => Array.from({ length: 34 }, (_, i) => i), [])
@@ -327,6 +331,8 @@ function Feed({ session }) {
         </aside>
       </div>
 
+      <Reel events={events} rows={rows} who={who} onOpen={(r) => setOpen(r)} />
+
       {!adding && (
         <button className="fab" onClick={openForm} aria-label="request something">
           <span className="plus">+</span> request
@@ -351,6 +357,110 @@ function Feed({ session }) {
         <button className="link" onClick={() => supabase.auth.signOut()}>sign out</button>
       </footer>
     </main>
+  )
+}
+
+const REEL_DAYS = 7 * 24 * 3600 * 1000
+const SEEN_KEY = 'movie-night:reel-seen'
+
+/* fresh off the reel: a side tray of what just landed on the shelf, who put it there, and when.
+   backed by media_events (event = imported) so it survives reloads; toasts only for arrivals while the page is open. */
+function Reel({ events, rows, who, onOpen }) {
+  const [openTray, setOpenTray] = useState(false)
+  const [seenAt, setSeenAt] = useState(() => localStorage.getItem(SEEN_KEY) || '')
+  const [toasts, setToasts] = useState([])
+  const known = useRef(null)
+
+  const byId = useMemo(() => Object.fromEntries(rows.map((r) => [r.id, r])), [rows])
+  const arrivals = useMemo(() => {
+    const cutoff = Date.now() - REEL_DAYS
+    return events
+      .filter((ev) => ev.event === 'imported' && new Date(ev.at).getTime() >= cutoff && byId[ev.request_id])
+      .map((ev) => ({ ...ev, row: byId[ev.request_id] }))
+      .sort((a, b) => new Date(b.at) - new Date(a.at))
+  }, [events, byId])
+
+  const fresh = arrivals.filter((a) => !seenAt || a.at > seenAt).length
+
+  // toast anything that arrives after first load
+  useEffect(() => {
+    if (!events.length) return
+    const ids = new Set(arrivals.map((a) => a.id))
+    if (known.current === null) { known.current = ids; return }
+    const newOnes = arrivals.filter((a) => !known.current.has(a.id))
+    known.current = ids
+    if (!newOnes.length) return
+    setToasts((t) => [...newOnes.map((a) => ({ id: a.id, a })), ...t].slice(0, 4))
+    for (const n of newOnes) setTimeout(() => setToasts((t) => t.filter((x) => x.id !== n.id)), 7000)
+  }, [arrivals, events.length])
+
+  function markSeen() {
+    const latest = arrivals[0]?.at || new Date().toISOString()
+    localStorage.setItem(SEEN_KEY, latest)
+    setSeenAt(latest)
+  }
+  function toggle() {
+    setOpenTray((v) => { if (!v) markSeen(); return !v })
+  }
+
+  useEffect(() => {
+    if (!openTray) return
+    const onKey = (e) => e.key === 'Escape' && setOpenTray(false)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [openTray])
+
+  const line = (a) => <><strong>{who(a.actor)}</strong> added <em>{a.row.title}</em></>
+
+  return (
+    <>
+      <button className={'reel-tab' + (fresh ? ' fresh' : '')} onClick={toggle} aria-label="new on the shelf">
+        <span className="reel-icon" aria-hidden="true">&#9654;</span>
+        new on the shelf
+        {fresh > 0 && <span className="reel-count">{fresh}</span>}
+      </button>
+
+      <div className="reel-toasts" aria-live="polite">
+        {toasts.map(({ id, a }) => (
+          <button key={id} className="reel-toast" onClick={() => { setToasts((t) => t.filter((x) => x.id !== id)); onOpen(a.row) }}>
+            {a.row.poster_url ? <img src={a.row.poster_url} alt="" /> : <span className="thumb blank" />}
+            <span>
+              <span className="reel-line">{line(a)}</span>
+              <span className="reel-when">{when(a.at)}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {openTray && (
+        <div className="reel-wrap" onClick={() => setOpenTray(false)}>
+          <aside className="reel" role="dialog" aria-label="new on the shelf" onClick={(e) => e.stopPropagation()}>
+            <div className="reel-head">
+              <h2 className="h">new on the shelf</h2>
+              <button className="link" onClick={() => setOpenTray(false)}>close</button>
+            </div>
+            {arrivals.length === 0 ? (
+              <p className="hint dim">nothing new this week</p>
+            ) : (
+              <ul className="reel-list">
+                {arrivals.map((a) => (
+                  <li key={a.id}>
+                    <button className="reel-item" onClick={() => { setOpenTray(false); onOpen(a.row) }}>
+                      {a.row.poster_url ? <img src={a.row.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
+                      <span className="reel-body">
+                        <span className="reel-line">{line(a)}</span>
+                        <span className="reel-when">{when(a.at)}</span>
+                      </span>
+                      {a.row.play_url && <a className="btn tiny" href={a.row.play_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>play</a>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </aside>
+        </div>
+      )}
+    </>
   )
 }
 

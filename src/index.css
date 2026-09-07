@@ -452,3 +452,72 @@ main { max-width: 980px; }
 .block > .actions .btn { color: var(--stub); border-color: rgba(246, 236, 216, 0.4); }
 .block > .actions .btn:hover { background: var(--stub); color: var(--ink); }
 .block > .link { color: var(--stub-edge); }
+
+/* v9: fresh off the reel, a side tray of what just landed */
+.reel-tab {
+  position: fixed; right: 0; top: 40%; z-index: 5;
+  transform: rotate(-90deg) translate(50%, -100%); transform-origin: right top;
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--board); color: var(--stub-edge);
+  border: 1px solid #2a2437; border-bottom: none; border-radius: 10px 10px 0 0;
+  padding: 8px 14px; font: inherit; font-size: 14px; letter-spacing: 0.02em; cursor: pointer;
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.4);
+  transition: color 0.2s, box-shadow 0.2s;
+}
+.reel-tab:hover, .reel-tab.fresh { color: var(--bulb); }
+.reel-tab.fresh { box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.4), 0 0 14px rgba(255, 209, 102, 0.35); }
+.reel-icon { font-size: 10px; opacity: 0.7; }
+.reel-count {
+  background: var(--curtain); color: #fff; font-weight: 700; font-size: 12px;
+  border-radius: 999px; padding: 0 7px; line-height: 18px; min-width: 18px; text-align: center;
+  transform: rotate(90deg);
+  animation: thud 0.55s cubic-bezier(0.3, 1.4, 0.4, 1) both;
+}
+
+.reel-toasts {
+  position: fixed; right: max(16px, calc(50% - 310px + 16px)); bottom: 84px; z-index: 6;
+  display: grid; gap: 8px; width: min(340px, calc(100vw - 32px));
+}
+.reel-toast {
+  display: flex; align-items: center; gap: 12px; text-align: left;
+  background: var(--stub); color: var(--ink); border: none; border-radius: var(--radius);
+  padding: 10px 12px; font: inherit; cursor: pointer;
+  border-left: 5px solid var(--ready);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  animation: tear 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.reel-toast:hover { transform: translateX(-2px); }
+.reel-toast img { width: 34px; height: 51px; object-fit: cover; border-radius: 3px; flex: none; background: var(--stub-edge); }
+.reel-line { display: block; font-size: 15px; line-height: 1.3; }
+.reel-line strong { font-weight: 700; }
+.reel-line em { font-style: normal; font-weight: 700; color: var(--ready); }
+.reel-when { display: block; font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+
+.reel-wrap { position: fixed; inset: 0; z-index: 7; background: rgba(10, 8, 16, 0.55); backdrop-filter: blur(2px); }
+.reel {
+  position: absolute; top: 0; right: 0; bottom: 0; width: min(380px, 100vw);
+  background: var(--stub); color: var(--ink);
+  padding: 18px 18px 24px; overflow-y: auto;
+  box-shadow: -18px 0 40px rgba(0, 0, 0, 0.5);
+  animation: reel-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes reel-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.reel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.reel-head .h { color: var(--ink); margin: 0; }
+.reel-head .link { color: var(--ink); }
+.reel .hint.dim { color: var(--ink-soft); }
+.reel-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.reel-item {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  background: transparent; color: inherit; border: 1.5px solid var(--stub-edge); border-radius: var(--radius);
+  padding: 8px 10px; font: inherit; cursor: pointer; transition: border-color 0.15s, transform 0.15s;
+}
+.reel-item:hover { border-color: var(--ink); transform: translateX(2px); }
+.reel-item img { width: 34px; height: 51px; object-fit: cover; border-radius: 3px; flex: none; background: var(--stub-edge); }
+.reel-body { flex: 1; min-width: 0; }
+
+@media (max-width: 520px) {
+  .reel-tab { top: auto; bottom: 88px; right: 0; transform: none; border-radius: 10px 0 0 10px; border: 1px solid #2a2437; border-right: none; padding: 8px 10px; }
+  .reel-count { transform: none; }
+  .reel-toasts { bottom: 140px; }
+}

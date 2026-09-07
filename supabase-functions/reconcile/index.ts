@@ -4,6 +4,7 @@
 //
 // POST  with header  x-reconcile-secret: <RECONCILE_SECRET>
 // -> { checked: n, imported: n, items: [{ id, title, play_url }] }
+// add ?debug=1 to also get jellyfin_count, failed (PATCH errors) and unmatched samples
 //
 // Matching, in order:
 //   movie/show : ProviderIds.Tmdb == external_id   ->  normalized title + year  ->  normalized title
@@ -17,8 +18,10 @@ const cors = {
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const RECONCILE_SECRET = Deno.env.get('RECONCILE_SECRET') ?? ''
+const RECONCILE_ACTOR = Deno.env.get('RECONCILE_ACTOR') || null  // auth user id credited for auto-imports (brandon)
 const JELLYFIN_URL = (Deno.env.get('JELLYFIN_URL') ?? '').replace(/\/$/, '')
 const JELLYFIN_KEY = Deno.env.get('JELLYFIN_KEY') ?? ''
+const JELLYFIN_USER_ID = Deno.env.get('JELLYFIN_USER_ID') ?? ''  // un-scoped /Items misses items; scope to a user like the web UI does
 const NAVIDROME_URL = (Deno.env.get('NAVIDROME_URL') ?? '').replace(/\/$/, '')
 const NAVIDROME_USER = Deno.env.get('NAVIDROME_USER') ?? ''
 const NAVIDROME_PASS = Deno.env.get('NAVIDROME_PASS') ?? ''
@@ -69,7 +72,8 @@ type LibItem = { id: string; title: string; year: number | null; artist: string 
 
 async function jellyfinLibrary(): Promise<LibItem[]> {
   if (!JELLYFIN_URL || !JELLYFIN_KEY) return []
-  const u = `${JELLYFIN_URL}/Items?IncludeItemTypes=Movie,Series&Recursive=true&Limit=2000&Fields=ProductionYear,ProviderIds`
+  const base = JELLYFIN_USER_ID ? `${JELLYFIN_URL}/Users/${JELLYFIN_USER_ID}/Items` : `${JELLYFIN_URL}/Items`
+  const u = `${base}?IncludeItemTypes=Movie,Series&Recursive=true&Limit=2000&Fields=ProductionYear,ProviderIds`
   const r = await fetch(u, { headers: jellyfinHeaders })
   if (!r.ok) return []
   const data = await r.json()
@@ -139,15 +143,22 @@ Deno.serve(async (req) => {
     const [jf, nd] = await Promise.all([needVideo ? jellyfinLibrary() : [], needAudio ? navidromeLibrary() : []])
 
     const imported: { id: string; title: string; play_url: string }[] = []
+    const failed: { id: string; title: string; error: string }[] = []
+    const unmatched: { title: string; external_id: string | null }[] = []
     for (const p of pending) {
       const hit = match(p, p.type === 'album' ? nd : jf)
-      if (!hit) continue
-      const patch = { status: 'imported', play_url: hit.play_url, library_item_id: hit.id }
+      if (!hit) { unmatched.push({ title: p.title, external_id: p.external_id }); continue }
+      const patch = { status: 'imported', play_url: hit.play_url, library_item_id: hit.id, imported_by: RECONCILE_ACTOR }
       const up = await rest(`media_requests?id=eq.${p.id}`, { method: 'PATCH', body: JSON.stringify(patch) })
       if (up.ok) imported.push({ id: p.id, title: p.title, play_url: hit.play_url })
+      else failed.push({ id: p.id, title: p.title, error: (await up.text()).slice(0, 300) })
     }
 
-    return json({ checked: pending.length, imported: imported.length, items: imported })
+    const debug = new URL(req.url).searchParams.get('debug') === '1'
+    return json({
+      checked: pending.length, imported: imported.length, items: imported,
+      ...(debug ? { jellyfin_count: jf.length, navidrome_count: nd.length, failed, unmatched: unmatched.slice(0, 50) } : {}),
+    })
   } catch (e) {
     return json({ error: String(e) }, 500)
   }
