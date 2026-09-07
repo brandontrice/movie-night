@@ -275,7 +275,11 @@ function AddForm({ user, type, onDone }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [looking, setLooking] = useState(false)
+  const [toast, setToast] = useState(null)
   const timer = useRef()
+  const toastTimer = useRef()
+
+  useEffect(() => () => clearTimeout(toastTimer.current), [])
 
   useEffect(() => {
     clearTimeout(timer.current)
@@ -306,7 +310,14 @@ function AddForm({ user, type, onDone }) {
     })
     setBusy(false)
     if (error) return setError('could not add that, try again')
-    onDone()
+    // stay here: drop the one we added, keep the rest, say so
+    setResults((r) => ({ ...r, candidates: r.candidates.filter((c) => c.external_id !== row.external_id || !row.external_id) }))
+    if (!row.external_id) setQ('')
+    setNote('')
+    setShowNote(false)
+    clearTimeout(toastTimer.current)
+    setToast(`added ${row.title}`)
+    toastTimer.current = setTimeout(() => setToast(null), 2200)
   }
 
   const noMatches = !looking && q.trim().length >= 2 && results.candidates.length === 0
@@ -373,8 +384,10 @@ function AddForm({ user, type, onDone }) {
 
       {error && <p className="error">{error}</p>}
       <div className="actions">
-        <button type="button" className="link" onClick={onDone}>cancel</button>
+        <button type="button" className="btn" onClick={onDone}>done</button>
       </div>
+
+      {toast && <div className="toast" role="status">{toast}</div>}
     </form>
   )
 }
