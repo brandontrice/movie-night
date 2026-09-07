@@ -32,7 +32,7 @@ function subsonicUrl(path: string, params: Record<string, string>) {
 
 async function jellyfinItems() {
   if (!JELLYFIN_URL || !JELLYFIN_KEY) return []
-  const u = `${JELLYFIN_URL}/Users/${Deno.env.get('JELLYFIN_USER_ID')}/Items?IncludeItemTypes=Movie,Series&Recursive=true&SortBy=DateCreated&SortOrder=Descending&Limit=500&Fields=DateCreated,ProductionYear,ProviderIds,Overview`
+  const u = `${JELLYFIN_URL}/Users/${Deno.env.get('JELLYFIN_USER_ID')}/Items?IncludeItemTypes=Movie,Series&Recursive=true&SortBy=DateCreated&SortOrder=Descending&Limit=500&Fields=DateCreated,ProductionYear,ProviderIds,Overview,UserData`
   const r = await fetch(u, { headers: jellyfinHeaders })
   if (!r.ok) return []
   const data = await r.json()
@@ -47,6 +47,8 @@ async function jellyfinItems() {
     added_at: i.DateCreated ?? null,
     external_id: i.ProviderIds?.Tmdb ?? null,
     library_item_id: i.Id,
+    // per-user watched flag (the query is scoped to brandon's jellyfin user, so this is "has anyone here watched it")
+    played: !!i.UserData?.Played,
   }))
 }
 
@@ -67,6 +69,7 @@ async function navidromeAlbums() {
     added_at: a.created ?? null,
     external_id: a.musicBrainzId ?? null,
     library_item_id: a.id,
+    played: null,
   }))
 }
 

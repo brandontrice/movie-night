@@ -427,21 +427,12 @@ main { max-width: 980px; }
   .row-actions { order: 4; margin-left: auto; }
 }
 
-/* just added */
-.just-added { display: grid; gap: 12px; }
-.ja-group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.ja-type { font-size: 13px; color: var(--stub-edge); opacity: 0.8; margin-bottom: 4px; }
-.ja-item {
-  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
-  background: rgba(246, 236, 216, 0.06); border: 1px solid rgba(246, 236, 216, 0.1); color: var(--stub);
-  border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 15px; cursor: pointer;
-  transition: background 0.15s, transform 0.12s;
-}
-.ja-item:hover { background: rgba(246, 236, 216, 0.12); transform: translateX(2px); }
-.ja-item img { width: 28px; height: 42px; object-fit: cover; border-radius: 3px; flex: none; }
-.ja-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ja-item .when { color: var(--stub-edge); }
-.rail-mobile .ja-group ul { display: grid; grid-template-columns: 1fr; }
+/* v11: now showing is tonight's picks */
+.h .h-link { margin-left: auto; color: var(--stub-edge); font-size: 13px; opacity: 0.8; }
+.h .h-link:hover { color: var(--bulb); opacity: 1; }
+.rail li.watched img { opacity: 0.55; filter: saturate(0.6); }
+.rail li.watched .rail-title { color: var(--stub-edge); opacity: 0.7; }
+.rail-title .seen { font-size: 11px; letter-spacing: 0.04em; opacity: 0.7; }
 
 /* the shelf */
 .shelf-tools { display: grid; gap: 8px; margin-bottom: 10px; }
@@ -506,15 +497,40 @@ main { max-width: 980px; }
 .reel-head .h { color: var(--ink); margin: 0; }
 .reel-head .link { color: var(--ink); }
 .reel .hint.dim { color: var(--ink-soft); }
-.reel-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+/* v11: one list for "new on the shelf", inline on desktop (dark) and in the tray on mobile (parchment) */
+.new-shelf { display: grid; gap: 12px; }
+.new-shelf .h .count.fresh { background: var(--curtain); color: #fff; animation: thud 0.55s cubic-bezier(0.3, 1.4, 0.4, 1) both; }
+.reel-groups { display: grid; gap: 12px; }
+.reel-type { font-size: 13px; color: var(--stub-edge); opacity: 0.8; margin-bottom: 4px; }
+.reel-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .reel-item {
-  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
-  background: transparent; color: inherit; border: 1.5px solid var(--stub-edge); border-radius: var(--radius);
-  padding: 8px 10px; font: inherit; cursor: pointer; transition: border-color 0.15s, transform 0.15s;
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  background: rgba(246, 236, 216, 0.06); border: 1px solid rgba(246, 236, 216, 0.1); color: var(--stub);
+  border-left: 3px solid transparent;
+  border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 15px; cursor: pointer;
+  transition: background 0.15s, transform 0.12s, border-color 0.15s;
 }
-.reel-item:hover { border-color: var(--ink); transform: translateX(2px); }
-.reel-item img { width: 34px; height: 51px; object-fit: cover; border-radius: 3px; flex: none; background: var(--stub-edge); }
+.reel-item:hover { background: rgba(246, 236, 216, 0.12); transform: translateX(2px); }
+.reel-item img { width: 28px; height: 42px; object-fit: cover; border-radius: 3px; flex: none; background: rgba(246, 236, 216, 0.15); }
 .reel-body { flex: 1; min-width: 0; }
+.reel-title { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reel-sub { font-weight: 400; color: var(--stub-edge); }
+.reel-item .reel-when { color: var(--stub-edge); margin-top: 1px; }
+.reel-item .btn.tiny { color: var(--stub); border-color: rgba(246, 236, 216, 0.4); }
+.reel-item .btn.tiny:hover { background: var(--stub); color: var(--ink); }
+/* lit until you've had a look */
+.reel-item.fresh { border-left-color: var(--bulb); background: rgba(255, 209, 102, 0.1); box-shadow: 0 0 0 1px rgba(255, 209, 102, 0.18), 0 0 16px rgba(255, 209, 102, 0.12); }
+.reel-item.fresh:hover { background: rgba(255, 209, 102, 0.16); }
+
+/* inside the parchment tray, flip to ink */
+.reel .reel-type { color: var(--ink-soft); }
+.reel .reel-item { background: transparent; border: 1.5px solid var(--stub-edge); border-left: 3px solid var(--stub-edge); color: var(--ink); border-radius: var(--radius); padding: 8px 10px; }
+.reel .reel-item:hover { border-color: var(--ink); }
+.reel .reel-item img { width: 34px; height: 51px; background: var(--stub-edge); }
+.reel .reel-sub, .reel .reel-item .reel-when { color: var(--ink-soft); }
+.reel .reel-item .btn.tiny { color: var(--ink); border-color: var(--ink); }
+.reel .reel-item .btn.tiny:hover { background: var(--ink); color: var(--stub); }
+.reel .reel-item.fresh { border-color: var(--bulb-dim); border-left-color: var(--bulb); background: rgba(255, 209, 102, 0.18); box-shadow: none; }
 
 @media (max-width: 520px) {
   .reel-tab { top: auto; bottom: 88px; right: 0; transform: none; border-radius: 10px 0 0 10px; border: 1px solid #2a2437; border-right: none; padding: 8px 10px; }

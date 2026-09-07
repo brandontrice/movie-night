@@ -42,6 +42,39 @@ function when(iso) {
   return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).toLowerCase()
 }
 
+// deterministic shuffle: the same seed gives the same order on every device (fnv-1a hash -> mulberry32)
+function seededShuffle(list, seed) {
+  let h = 2166136261
+  for (const c of String(seed)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619) }
+  let st = h >>> 0
+  const rand = () => {
+    st = (st + 0x6d2b79f5) >>> 0
+    let t = st
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  const a = list.slice()
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+// true when the two-column layout is in play (matches the 900px breakpoint in index.css)
+function useDesktop() {
+  const get = () => typeof window !== 'undefined' && window.matchMedia('(min-width: 900px)').matches
+  const [desk, setDesk] = useState(get)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 900px)')
+    const on = () => setDesk(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return desk
+}
+
 /* the sign over the door: a ring of bulbs that chase on, then twinkle */
 function Marquee({ children }) {
   const bulbs = useMemo(() => Array.from({ length: 34 }, (_, i) => i), [])
@@ -185,12 +218,17 @@ function Feed({ session }) {
       return req ? { ...i, requested_by: req.requested_by, note: req.note, request_id: req.id, external_id: i.external_id || req.external_id } : i
     })
   }, [library, rows])
-  const nowShowing = ready.slice(0, 8)
-  const justAdded = useMemo(() => {
-    const by = {}
-    for (const t of TYPES) by[t] = ready.filter((r) => r.type === t).slice(0, 3)
-    return by
-  }, [ready])
+  // now showing: a daily shuffle of what nobody's watched yet, same on every phone, reshuffle on demand.
+  // topped up with watched titles only when the unwatched pool runs dry.
+  const [roll, setRoll] = useState(0)
+  const watchable = useMemo(() => ready.filter((r) => r.type !== 'album'), [ready])
+  const unwatched = useMemo(() => watchable.filter((r) => !r.played), [watchable])
+  const nowShowing = useMemo(() => {
+    const seed = `${new Date().toDateString()}:${roll}`
+    const picks = seededShuffle(unwatched, seed)
+    if (picks.length < 8) picks.push(...seededShuffle(watchable.filter((r) => r.played), seed))
+    return picks.slice(0, 8)
+  }, [unwatched, watchable, roll])
   const shelf = useMemo(() => {
     const cutoff = Date.now() - NINETY_DAYS
     const q = shelfQ.trim().toLowerCase()
@@ -229,6 +267,10 @@ function Feed({ session }) {
   function openForm() { setAdding(true) }
 
   const lineRows = lineAll ? [...waiting, ...grabbing] : [...waiting, ...grabbing].slice(0, 5)
+  const desktop = useDesktop()
+  // something scanned straight into jellyfin or navidrome never went through a request, so no event names who did it.
+  // only brandon imports, so credit him: his own id when he's the one looking, otherwise whoever the last import was credited to.
+  const adder = isAdmin ? session.user.id : [...events].reverse().find((ev) => ev.event === 'imported')?.actor || null
   const openRow = open ? (open.fromLibrary ? ready.find((r) => r.id === open.id) || open : rows.find((r) => r.id === open.id) || open) : null
 
   function Row({ r }) {
@@ -281,16 +323,20 @@ function Feed({ session }) {
         <div className="col-main">
           {/* now showing */}
           <section className="block">
-            <h2 className="h">now showing</h2>
+            <h2 className="h">
+              now showing
+              {unwatched.length > 0 && <span className="count">{unwatched.length} unwatched</span>}
+              {watchable.length > 1 && <button className="link tiny h-link" onClick={() => setRoll((n) => n + 1)}>reshuffle</button>}
+            </h2>
             {nowShowing.length === 0 ? (
               <p className="hint dim">{libLoaded ? 'nothing on the servers yet' : 'checking the shelf'}</p>
             ) : (
               <ul className="rail">
                 {nowShowing.map((r, i) => (
-                  <li key={r.id} className={i === 0 ? 'lead' : ''}>
+                  <li key={r.id} className={(i === 0 ? 'lead' : '') + (r.played ? ' watched' : '')}>
                     <a href={r.play_url || '#'} onClick={(e) => { if (!r.play_url) { e.preventDefault(); setOpen(r) } }} target={r.play_url ? '_blank' : undefined} rel="noreferrer">
                       {r.poster_url ? <img src={r.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="poster blank" />}
-                      <span className="rail-title">{r.title}</span>
+                      <span className="rail-title">{r.title}{r.played ? <span className="seen"> seen</span> : null}</span>
                     </a>
                   </li>
                 ))}
@@ -311,11 +357,6 @@ function Feed({ session }) {
             {pending.length > 5 && (
               <button className="link" onClick={() => setLineAll((v) => !v)}>{lineAll ? 'show fewer' : `see all ${pending.length}`}</button>
             )}
-          </section>
-
-          {/* just added (mobile position) */}
-          <section className="block rail-mobile">
-            <JustAdded justAdded={justAdded} onOpen={setOpen} />
           </section>
 
           {/* the shelf */}
@@ -351,11 +392,11 @@ function Feed({ session }) {
         </div>
 
         <aside className="col-rail rail-desktop">
-          <JustAdded justAdded={justAdded} onOpen={setOpen} />
+          {desktop && <Reel events={events} rows={rows} ready={ready} who={who} adder={adder} inline onOpen={(r) => setOpen(r)} />}
         </aside>
       </div>
 
-      <Reel events={events} rows={rows} who={who} onOpen={(r) => setOpen(r)} />
+      {!desktop && <Reel events={events} rows={rows} ready={ready} who={who} adder={adder} onOpen={(r) => setOpen(r)} />}
 
       {!adding && (
         <button className="fab" onClick={openForm} aria-label="request something">
@@ -391,36 +432,65 @@ function Feed({ session }) {
 const REEL_DAYS = 7 * 24 * 3600 * 1000
 const SEEN_KEY = 'movie-night:reel-seen'
 
-/* fresh off the reel: a side tray of what just landed on the shelf, who put it there, and when.
-   backed by media_events (event = imported) so it survives reloads; toasts only for arrivals while the page is open. */
-function Reel({ events, rows, who, onOpen }) {
+/* new on the shelf: everything that landed in the last 7 days, who put it there, and when.
+   two sources, one list: the request trail (media_events, event = imported) knows the moment reconcile or a scan flipped
+   a request, and the servers themselves (the shelf function) know about anything that was dropped in without a request.
+   desktop renders it inline in the right column with unseen items lit; mobile keeps the edge tab and slide-in tray.
+   toasts fire everywhere for arrivals while the page is open. */
+function Reel({ events, rows, ready, who, adder, inline = false, onOpen }) {
   const [openTray, setOpenTray] = useState(false)
-  const [seenAt, setSeenAt] = useState(() => localStorage.getItem(SEEN_KEY) || '')
+  // the mark you last left: frozen at mount so highlights stay put while you look, and only advanced by closing the tray
+  const seenAtMount = useRef(localStorage.getItem(SEEN_KEY) || '')
+  const [seenAt, setSeenAt] = useState(seenAtMount.current)
   const [toasts, setToasts] = useState([])
   const known = useRef(null)
 
-  const byId = useMemo(() => Object.fromEntries(rows.map((r) => [r.id, r])), [rows])
   const arrivals = useMemo(() => {
     const cutoff = Date.now() - REEL_DAYS
-    return events
-      .filter((ev) => ev.event === 'imported' && new Date(ev.at).getTime() >= cutoff && byId[ev.request_id])
-      .map((ev) => ({ ...ev, row: byId[ev.request_id] }))
-      .sort((a, b) => new Date(b.at) - new Date(a.at))
-  }, [events, byId])
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
+    const byLib = Object.fromEntries(ready.filter((r) => r.library_item_id).map((r) => [r.library_item_id, r]))
+    const out = []
+    const covered = new Set()
+    for (const ev of events) {
+      if (ev.event !== 'imported' || new Date(ev.at).getTime() < cutoff) continue
+      const req = byId[ev.request_id]
+      if (!req) continue
+      const item = req.library_item_id ? byLib[req.library_item_id] : null
+      if (req.library_item_id) covered.add(req.library_item_id)
+      out.push({ id: `ev:${ev.id}`, at: ev.at, actor: ev.actor, row: item || req })
+    }
+    for (const r of ready) {
+      if (!r.added_at || covered.has(r.library_item_id) || new Date(r.added_at).getTime() < cutoff) continue
+      out.push({ id: `lib:${r.library_item_id}`, at: r.added_at, actor: adder, row: r })
+    }
+    return out.sort((a, b) => new Date(b.at) - new Date(a.at))
+  }, [events, rows, ready, adder])
 
+  const isFresh = (a) => !seenAtMount.current || a.at > seenAtMount.current
   const fresh = arrivals.filter((a) => !seenAt || a.at > seenAt).length
+  const loaded = events.length > 0 || ready.length > 0
 
-  // first look after arriving on the page: if anything landed since you were last here, show it
+  // mobile only: first look after arriving on the page, if anything landed since you were last here, show it
   const greeted = useRef(false)
   useEffect(() => {
-    if (greeted.current || !events.length) return
+    if (inline || greeted.current || !loaded) return
     greeted.current = true
     if (fresh > 0) setOpenTray(true)
-  }, [events.length, fresh])
+  }, [inline, loaded, fresh])
+
+  // desktop only: the list is already in view, so a few seconds after it renders count it as seen for next time.
+  // highlights stay lit for this visit because they're measured against the mark from mount.
+  useEffect(() => {
+    if (!inline || !loaded || !arrivals.length) return
+    const latest = arrivals[0].at
+    if (seenAt && latest <= seenAt) return
+    const t = setTimeout(() => { localStorage.setItem(SEEN_KEY, latest); setSeenAt(latest) }, 4000)
+    return () => clearTimeout(t)
+  }, [inline, loaded, arrivals, seenAt])
 
   // toast anything that arrives after first load
   useEffect(() => {
-    if (!events.length) return
+    if (!loaded) return
     const ids = new Set(arrivals.map((a) => a.id))
     if (known.current === null) { known.current = ids; return }
     const newOnes = arrivals.filter((a) => !known.current.has(a.id))
@@ -428,12 +498,13 @@ function Reel({ events, rows, who, onOpen }) {
     if (!newOnes.length) return
     setToasts((t) => [...newOnes.map((a) => ({ id: a.id, a })), ...t].slice(0, 4))
     for (const n of newOnes) setTimeout(() => setToasts((t) => t.filter((x) => x.id !== n.id)), 7000)
-  }, [arrivals, events.length])
+  }, [arrivals, loaded])
 
   function markSeen() {
     const latest = arrivals[0]?.at || new Date().toISOString()
     localStorage.setItem(SEEN_KEY, latest)
     setSeenAt(latest)
+    seenAtMount.current = latest
   }
   function close() { markSeen(); setOpenTray(false) }
   function toggle() { openTray ? close() : setOpenTray(true) }
@@ -445,7 +516,38 @@ function Reel({ events, rows, who, onOpen }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [openTray])
 
-  const line = (a) => <><strong>{who(a.actor)}</strong> added <em>{a.row.title}</em></>
+  const name = (a) => (a.actor ? who(a.actor) : null)
+  const line = (a) => <>{name(a) ? <><strong>{name(a)}</strong> added </> : 'now on the shelf: '}<em>{a.row.title}</em></>
+
+  const toastEl = (
+    <div className="reel-toasts" aria-live="polite">
+      {toasts.map(({ id, a }) => (
+        <button key={id} className="reel-toast" onClick={() => { setToasts((t) => t.filter((x) => x.id !== id)); onOpen(a.row) }}>
+          {a.row.poster_url ? <img src={a.row.poster_url} alt="" /> : <span className="thumb blank" />}
+          <span>
+            <span className="reel-line">{line(a)}</span>
+            <span className="reel-when">{when(a.at)}</span>
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+
+  const list = (
+    <ReelList arrivals={arrivals} isFresh={isFresh} name={name} loaded={loaded} onPick={(a) => { if (!inline) close(); onOpen(a.row) }} />
+  )
+
+  if (inline) {
+    return (
+      <>
+        <div className="new-shelf">
+          <h2 className="h">new on the shelf{arrivals.some(isFresh) && <span className="count fresh">{arrivals.filter(isFresh).length} new</span>}</h2>
+          {list}
+        </div>
+        {toastEl}
+      </>
+    )
+  }
 
   return (
     <>
@@ -455,17 +557,7 @@ function Reel({ events, rows, who, onOpen }) {
         {fresh > 0 && <span className="reel-count">{fresh}</span>}
       </button>
 
-      <div className="reel-toasts" aria-live="polite">
-        {toasts.map(({ id, a }) => (
-          <button key={id} className="reel-toast" onClick={() => { setToasts((t) => t.filter((x) => x.id !== id)); onOpen(a.row) }}>
-            {a.row.poster_url ? <img src={a.row.poster_url} alt="" /> : <span className="thumb blank" />}
-            <span>
-              <span className="reel-line">{line(a)}</span>
-              <span className="reel-when">{when(a.at)}</span>
-            </span>
-          </button>
-        ))}
-      </div>
+      {toastEl}
 
       {openTray && (
         <div className="reel-wrap" onClick={close}>
@@ -474,24 +566,7 @@ function Reel({ events, rows, who, onOpen }) {
               <h2 className="h">new on the shelf</h2>
               <button className="link" onClick={close}>close</button>
             </div>
-            {arrivals.length === 0 ? (
-              <p className="hint dim">nothing new this week</p>
-            ) : (
-              <ul className="reel-list">
-                {arrivals.map((a) => (
-                  <li key={a.id}>
-                    <button className="reel-item" onClick={() => { close(); onOpen(a.row) }}>
-                      {a.row.poster_url ? <img src={a.row.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
-                      <span className="reel-body">
-                        <span className="reel-line">{line(a)}</span>
-                        <span className="reel-when">{when(a.at)}</span>
-                      </span>
-                      {a.row.play_url && <a className="btn tiny" href={a.row.play_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>play</a>}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {list}
           </aside>
         </div>
       )}
@@ -499,22 +574,27 @@ function Reel({ events, rows, who, onOpen }) {
   )
 }
 
-function JustAdded({ justAdded, onOpen }) {
-  const any = TYPES.some((t) => justAdded[t].length)
+/* the list itself, grouped by type like "just added" was. the same markup sits on the dark page (desktop) and in the
+   parchment tray (mobile); index.css recolours it inside .reel */
+function ReelList({ arrivals, isFresh, name, loaded, onPick }) {
+  if (!loaded) return <p className="hint dim">checking the shelf</p>
+  if (arrivals.length === 0) return <p className="hint dim">nothing new this week</p>
+  const groups = TYPES.map((t) => [t, arrivals.filter((a) => a.row.type === t)]).filter(([, l]) => l.length)
   return (
-    <div className="just-added">
-      <h2 className="h">just added</h2>
-      {!any && <p className="hint dim">nothing yet</p>}
-      {TYPES.map((t) => justAdded[t].length > 0 && (
-        <div key={t} className="ja-group">
-          <div className="ja-type">{t}s</div>
-          <ul>
-            {justAdded[t].map((r) => (
-              <li key={r.id}>
-                <button className="ja-item" onClick={() => onOpen(r)}>
-                  {r.poster_url ? <img src={r.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
-                  <span className="ja-title">{r.title}</span>
-                  <span className="when">{timeAgo(r.imported_at || r.created_at)}</span>
+    <div className="reel-groups">
+      {groups.map(([t, list]) => (
+        <div key={t} className="reel-group">
+          <div className="reel-type">{t}s</div>
+          <ul className="reel-list">
+            {list.map((a) => (
+              <li key={a.id}>
+                <button className={'reel-item' + (isFresh(a) ? ' fresh' : '')} onClick={() => onPick(a)}>
+                  {a.row.poster_url ? <img src={a.row.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
+                  <span className="reel-body">
+                    <span className="reel-title">{a.row.title}{a.row.artist ? <span className="reel-sub"> {a.row.artist}</span> : null}</span>
+                    <span className="reel-when">{name(a) ? `${name(a)} added it, ` : ''}{when(a.at)}</span>
+                  </span>
+                  {a.row.play_url && <a className="btn tiny" href={a.row.play_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>play</a>}
                 </button>
               </li>
             ))}
