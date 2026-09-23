@@ -33,9 +33,7 @@ export const SHOTS = [
   ['sheet-album', 'sheet-album', '', 'detail sheet: an album (no extra details)'],
   ['sheet-request', 'sheet-request', 'as=cate', 'detail sheet: a request still in line'],
   ['sheet-loading', 'sheet-loading', 'as=cate&details=slow', 'detail sheet: details loading'],
-  ['sheet-pull', 'sheet-pull', 'as=cate', 'detail sheet: withdraw, confirm step'],
-  ['line-scanning', 'line-actions', '', "admin: 'imported' scanning, 'nevermind' asking sure?"],
-  ['line-missed', 'line-actions', 'scan=miss', "admin: 'imported' came back not on the shelf yet"],
+  ['line', 'line', '', 'the line up close, admin buttons at rest (the harness never presses them)'],
   ['form-empty', 'form-empty', '', 'request form, fresh'],
   ['form-loading', 'form-loading', 'lookup=slow', 'request form: looking'],
   ['form-results', 'form-results', '', 'request form: results'],
@@ -78,19 +76,31 @@ function connect(wsUrl) {
   const ws = new WebSocket(wsUrl)
   let id = 0
   const waiting = new Map()
+  const handlers = {}
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data)
-    if (msg.id && waiting.has(msg.id)) { const { ok, no } = waiting.get(msg.id); waiting.delete(msg.id); msg.error ? no(new Error(msg.error.message)) : ok(msg.result) }
+    if (msg.method) return handlers[msg.method]?.(msg.params)
+    if (msg.id && waiting.has(msg.id)) { const { ok, no } = waiting.get(msg.id); waiting.delete(msg.id); if (msg.error) no(new Error(msg.error.message)); else ok(msg.result) }
   }
   const send = (method, params = {}) => new Promise((ok, no) => { waiting.set(++id, { ok, no }); ws.send(JSON.stringify({ id, method, params })) })
-  return new Promise((r) => (ws.onopen = () => r({ send, close: () => ws.close() })))
+  return new Promise((r) => (ws.onopen = () => r({ send, on: (method, cb) => (handlers[method] = cb), close: () => ws.close() })))
 }
 
-async function shoot([name, scene, extra], vp) {
+async function shoot([name, scene, extra], vp, { expectBlocked = 0 } = {}) {
   const t = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })).json()
   const page = await connect(t.webSocketDebuggerUrl)
   const { send } = page
   await send('Page.enable'); await send('Runtime.enable')
+  // hard rule, browser layer: only reads leave this page. any other method to anywhere but the local harness server
+  // is failed before it is sent, and the shot is marked as an error.
+  const blocked = []
+  page.on('Fetch.requestPaused', ({ requestId, request }) => {
+    const read = ['GET', 'HEAD', 'OPTIONS'].includes(request.method) || request.url.startsWith(base)
+    if (read) return send('Fetch.continueRequest', { requestId })
+    blocked.push(`${request.method} ${request.url}`)
+    send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' })
+  })
+  await send('Fetch.enable', { patterns: [{ urlPattern: '*' }] })
   await send('Emulation.setDeviceMetricsOverride', { width: vp.w, height: vp.h, deviceScaleFactor: vp.scale, mobile: vp.mobile })
   await send('Page.navigate', { url: `${base}?scene=${scene}${extra ? '&' + extra : ''}` })
   let ready = null
@@ -98,18 +108,26 @@ async function shoot([name, scene, extra], vp) {
     await sleep(100)
     ready = (await send('Runtime.evaluate', { expression: 'window.__ready || null', returnByValue: true })).result.value
   }
+  if (expectBlocked) ready = ready === 'ok' && blocked.length === expectBlocked ? 'ok' : `error: expected ${expectBlocked} blocked write(s), saw ${blocked.length} (${ready})`
+  else if (blocked.length) ready = `error: blocked a write: ${blocked[0]}`
   const kind = (await send('Runtime.evaluate', { expression: 'window.__shot', returnByValue: true })).result.value
   if (kind === 'full') {
     const h = (await send('Runtime.evaluate', { expression: 'document.documentElement.scrollHeight', returnByValue: true })).result.value
     await send('Emulation.setDeviceMetricsOverride', { width: vp.w, height: Math.min(h, 14000), deviceScaleFactor: vp.scale, mobile: vp.mobile })
     await sleep(400)
   }
+  if (expectBlocked) { page.close(); await fetch(`http://127.0.0.1:${port}/json/close/${t.id}`); return ready }
   const { data } = await send('Page.captureScreenshot', { format: 'png' })
   writeFileSync(join(OUT, `${name}-${vp.w}.png`), Buffer.from(data, 'base64'))
   page.close()
   await fetch(`http://127.0.0.1:${port}/json/close/${t.id}`)
   return ready
 }
+
+// the read-only guards have to prove themselves before any picture is taken
+const test = await shoot(['selftest', 'selftest', ''], WIDTHS[0], { expectBlocked: 1 })
+if (test !== 'ok') { console.log(`selftest failed, nothing shot: ${test}`); chrome.kill(); server.close(); process.exit(1) }
+console.log('selftest ok: driver, click listener, stub client and browser all refuse writes')
 
 mkdirSync(OUT, { recursive: true })
 const list = only.length ? SHOTS.filter((s) => only.includes(s[0])) : SHOTS

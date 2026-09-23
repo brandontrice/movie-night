@@ -176,6 +176,25 @@ Stack: React 19 + Vite 8, plain JS, no router, no state library, no CSS
 framework. Lint is `npm run lint` (oxlint). **No new dependencies without
 asking.**
 
+### The screenshot harness never changes data
+
+`design/` renders the real app on a captured fixture (see `design/README.md`).
+**Hard rule: no harness scene, script or agent ever presses a control that
+changes or removes data**: nevermind, sure?, imported, delete, withdraw, sign
+out, or anything added later that writes. Show those states by other means or
+not at all. This holds at four layers, and `node design/shoot.mjs` runs a
+self-test proving each one before it takes a single picture:
+
+1. the scene driver refuses to click a forbidden control;
+2. a capture-phase click listener swallows any click that lands on one anyway
+   and fails the shot;
+3. the stub client throws on update, delete, library-scan and sign out;
+4. the shooter fails every non-GET request leaving the page, at the browser.
+
+Never point the harness at the live client or a signed-in session, and never
+weaken a guard to get a shot. The one write a scene may make is the stubbed
+insert behind the "added" toast, which never leaves the page.
+
 ---
 
 ## 6. How Brandon wants you to work
@@ -186,3 +205,28 @@ asking.**
   before/after screenshots at 390 and 1440, a build, then deploy, commit, push.
 - **Full runnable commands and SQL**, and say which directory each runs in.
 - If this file conflicts with what you find in the code, stop and say so.
+
+---
+
+## 7. Follow-ups, queued outside the design phases
+
+Not to be started inside a design phase. Each is an edge function change, so it
+needs Brandon's go-ahead, a deploy, and the drift check in section 3.
+
+1. **Every title shows as unwatched.** `shelf` reads `UserData.Played` from
+   Jellyfin's `/Users/{JELLYFIN_USER_ID}/Items`, and as of 2026-09-23 it is
+   `false` for all 277 movies and shows, so now showing's "N unwatched" is the
+   whole library and the watched fallback never kicks in. Suspects, in order:
+   the `JELLYFIN_USER_ID` in the functions' env is not the account that
+   actually watches; the plays happen under another Jellyfin user (a per-user
+   flag, so "has anyone here watched it" needs both users checked); or the
+   field is not being returned for this query. Start by comparing
+   `UserData` for one title Brandon knows he has watched, per Jellyfin user.
+2. **`shelf`, `details` and `lookup` answer without a key.** Anyone on the LAN
+   can list the library, pull album art through the Navidrome proxy, and spend
+   the TMDB quota; `library-scan` requires an Authorization header and
+   `reconcile` a shared secret, so those two are fine. Fix: require a signed-in
+   user's JWT (verify it in the function, or turn on JWT verification for these
+   three), keeping `GET shelf?art=` working for `<img>` tags, which cannot
+   send headers (a short-lived signed art URL, or accept the anon key there
+   as today).

@@ -23,10 +23,12 @@ pictures**, so capture once at the start of a phase and shoot before and after f
 - `assets/before.css` is the stylesheet as deployed before the design work started (commit `6db2d1f`,
   `index-mAPm2wWv.css`). To re-shoot the true "before", check that commit out in a worktree and run
   the harness there.
+- **Read-only, always.** No scene presses nevermind, sure?, imported, delete or sign out; four guards enforce it and
+  `shoot.mjs` runs a self-test of all four before every set (details in AGENTS.md, section 5).
 - Scenes live in `harness/main.jsx` (what to click), the scene list and widths in `shoot.mjs`.
   Data knobs are URL params read by `harness/mock-supabase.js`: `as=brandon|cate|out`,
   `shelf=ok|slow|fail|empty`, `rows=ok|empty`, `details=ok|slow|fail`, `lookup=ok|slow`,
-  `scan=wait|miss`, `seen=now`.
+  `seen=now`.
 - Chrome or Edge is found automatically (`CHROME=` overrides). Nothing to install.
 - `fixture/`, `shots/` and `harness-dist/` are gitignored: the fixture is household data, and
   the shots regenerate.

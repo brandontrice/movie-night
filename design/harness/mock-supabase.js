@@ -8,7 +8,6 @@ const shelfMode = P.get('shelf') || 'ok'        // ok | slow | fail | empty
 const rowsMode = P.get('rows') || 'ok'          // ok | empty
 const detailsMode = P.get('details') || 'ok'    // ok | slow | fail
 const lookupMode = P.get('lookup') || 'ok'      // ok | slow
-const scanMode = P.get('scan') || 'wait'        // wait | miss
 
 const byName = Object.fromEntries(data.profiles.map((p) => [p.display_name, p]))
 const me = byName[who]
@@ -16,6 +15,9 @@ const me = byName[who]
 const session = me ? { user: { id: me.user_id, email: who === 'brandon' ? import.meta.env.VITE_ADMIN_EMAIL : `${who}@harness.local` } } : null
 
 const never = () => new Promise(() => {})
+// hard rule: nothing here changes or removes data. updates, deletes, scans and sign out throw so a scene that
+// reaches one fails loudly. insert is the one write a scene may make (the added toast) and it stays in this page.
+const readOnly = (what) => { throw new Error(`harness is read-only: refused ${what}`) }
 const later = (v, ms = 0) => new Promise((r) => setTimeout(() => r(v), ms))
 
 const tables = {
@@ -27,7 +29,7 @@ const tables = {
 function query(table) {
   const q = {
     select: () => q, order: () => q, eq: () => q,
-    insert: () => later({ error: null }), update: () => q, delete: () => q,
+    insert: () => later({ error: null }), update: () => readOnly(`update on ${table}`), delete: () => readOnly(`delete on ${table}`),
     then: (res, rej) => later({ data: tables[table] ?? [], error: null }).then(res, rej),
   }
   return q
@@ -50,7 +52,7 @@ const functions = {
       const hit = data.lookup[`${body.type}:${body.q}`]
       return { data: hit ?? { candidates: [], owned: [] }, error: null }
     }
-    if (name === 'library-scan') return scanMode === 'miss' ? later({ data: { ok: true, found: false }, error: null }, 600) : never()
+    if (name === 'library-scan') readOnly('library-scan')
     return { data: null, error: new Error(`no fixture for ${name}`) }
   },
 }
@@ -75,7 +77,7 @@ export const supabase = {
     getSession: () => later({ data: { session } }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
     signInWithPassword: () => later({ error: { message: 'harness' } }, 300),
-    signOut: () => later({}),
+    signOut: () => readOnly('sign out'),
   },
   from: query,
   functions,

@@ -21,6 +21,22 @@ const SCENES = window.__SCENES = {}
 const DAY = 864e5
 localStorage.setItem(SEEN_KEY, new RealDate(NOW - (P.get('seen') === 'now' ? 0 : 3 * DAY)).toISOString())
 
+// ---- HARD RULE: the harness never presses anything that changes or removes data ----
+// nevermind, sure?, imported, sign out, delete: the driver refuses to click them, and a capture-phase listener
+// swallows any click that lands on one anyway and fails the shot. Three layers hold this (see design/README.md):
+// this one, the stub client refusing writes, and shoot.mjs failing any non-GET request at the browser.
+const FORBIDDEN = /\b(nevermind|sure\?|take it off|imported|sign out|delete|withdraw|remove)\b/i
+const forbidden = (el) => {
+  const b = el?.closest?.('button, a, [role="button"]')
+  return !!b && (FORBIDDEN.test(b.textContent) || b.matches('.pull, .foot *'))
+}
+let violation = null
+document.addEventListener('click', (e) => {
+  if (!forbidden(e.target)) return
+  e.preventDefault(); e.stopImmediatePropagation()
+  violation ||= `clicked a forbidden control: "${e.target.closest('button, a').textContent.trim()}"`
+}, true)
+
 // ---- tiny driver ----
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 async function find(test, ms = 8000) {
@@ -34,7 +50,11 @@ async function find(test, ms = 8000) {
 }
 const q = (sel) => document.querySelector(sel)
 const byText = (sel, text) => [...document.querySelectorAll(sel)].find((e) => e.textContent.trim().toLowerCase().includes(text.toLowerCase()))
-const click = async (sel, text) => (await find(() => (text ? byText(sel, text) : q(sel)))).click()
+async function click(sel, text) {
+  const el = await find(() => (text ? byText(sel, text) : q(sel)))
+  if (forbidden(el)) throw new Error(`harness refuses to click "${el.textContent.trim()}": it changes or removes data`)
+  el.click()
+}
 async function type(sel, value) {
   const el = await find(() => q(sel))
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value)
@@ -58,8 +78,26 @@ Object.assign(SCENES, {
   'sheet-album':     { shot: 'view', run: async () => { await dismissGreeting(); await shelfFilter('albums'); await click('.shelf .row', firstOf('album').title); await find(() => q('.sheet .hint, .sheet .tracks')) } },
   'sheet-request':   { shot: 'view', run: async () => { await dismissGreeting(); await click('.line .row', lineReq.title); await find(() => q('.sheet-overview, .sheet .hint')); await sleep(600) } },
   'sheet-loading':   { shot: 'view', run: async () => { await dismissGreeting(); await click('.line .row', lineReq.title); await find(() => q('.sheet .skeleton')) } },
-  'sheet-pull':      { shot: 'view', run: async () => { await dismissGreeting(); await click('.line .row', lineReq.title); await click('.sheet .pull', 'nevermind') } },
-  'line-actions':    { shot: 'view', run: async () => { await dismissGreeting(); await click('.line .btn', 'imported'); await click('.line .pull', 'nevermind'); scrollToBlock('the line'); await sleep(900) } },
+  // run by shoot.mjs before every set: each guard has to stop a forbidden action or nothing gets shot
+  'selftest':        { shot: 'view', run: async () => {
+    await dismissGreeting(); await loaded()
+    let refused = false
+    try { await click('.line .pull', 'nevermind') } catch { refused = true }
+    if (!refused) throw new Error('selftest: driver clicked nevermind')
+    byText('.line .pull', 'nevermind').click()                 // straight past the driver: the listener must eat it
+    await sleep(100)
+    if (!violation || byText('.line .pull', 'sure?')) throw new Error('selftest: click listener let nevermind through')
+    violation = null
+    const { supabase } = await import('./mock-supabase.js')
+    for (const f of [() => supabase.from('media_requests').delete(), () => supabase.from('media_requests').update({}), () => supabase.auth.signOut()]) {
+      let threw = false
+      try { await f() } catch { threw = true }
+      if (!threw) throw new Error('selftest: stub client allowed a write')
+    }
+    // browser layer: shoot.mjs must fail this and count exactly one blocked write (TEST-NET address, goes nowhere)
+    await fetch('http://192.0.2.1/harness-selftest', { method: 'POST' }).catch(() => {})
+  } },
+  'line':          { shot: 'view', run: async () => { await dismissGreeting(); await loaded(); scrollToBlock('the line'); await sleep(300) } },
   'form-empty':      { shot: 'view', run: async () => { await dismissGreeting(); await click('.fab'); scrollTo(0, 0) } },
   'form-results':    { shot: 'view', run: async () => { await dismissGreeting(); await click('.fab'); await type('.stub-form input', 'the notebook'); await find(() => q('.results:not(.skeleton) li')); await sleep(700) } },
   'form-owned':      { shot: 'view', run: async () => { await dismissGreeting(); await click('.fab'); await type('.stub-form input', data.owned_query); await find(() => q('.owned')); await sleep(700) } },
@@ -94,7 +132,7 @@ try {
   await s.run()
   await sleep(900) // let entrance animations land
   await document.fonts?.ready
-  window.__ready = 'ok'
+  window.__ready = violation ? 'error: ' + violation : 'ok'
 } catch (e) {
   window.__ready = 'error: ' + e.message
 }
