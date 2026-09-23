@@ -1,0 +1,136 @@
+// Screenshots every scene at 390 (phone, 2x) and 1440 (desktop) through headless Chrome, driven over the
+// DevTools protocol with Node's built-in WebSocket, so there is nothing to install.
+//
+//   node design/capture-data.mjs            (once, or when you want fresher data)
+//   npx vite build --config design/vite.config.js
+//   node design/shoot.mjs before            -> design/shots/before/*.png + index.html contact sheet
+//   node design/shoot.mjs p1 feed sheet-movie   (only the named shots)
+import { spawn } from 'node:child_process'
+import { createServer } from 'node:http'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
+import { extname, join, resolve } from 'node:path'
+
+const [label = 'current', ...only] = process.argv.slice(2)
+const DIST = resolve('design/harness-dist')
+const OUT = resolve('design/shots', label)
+const CHROME = [
+  process.env.CHROME,
+  'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+  '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
+].find((p) => p && existsSync(p))
+
+// name, scene, extra query, note for the contact sheet
+export const SHOTS = [
+  ['signin', 'signin', 'as=out', 'signed out'],
+  ['feed', 'feed', '', 'the landing view after the greeting is dismissed: now showing, the line, the shelf lit with new arrivals'],
+  ['feed-quiet', 'feed-quiet', 'seen=now', 'nothing new since last visit'],
+  ['feed-cate', 'feed', 'as=cate', "cate's view: her column is 'yours', no admin buttons"],
+  ['scrolled', 'scrolled', '', 'marquee tucked into its compact sticky form'],
+  ['greeting', 'greeting', '', 'since you were last here'],
+  ['arrival-toast', 'arrival-toast', '', 'something lands while the page is open'],
+  ['sheet-movie', 'sheet-movie', '', 'detail sheet: a movie on the shelf'],
+  ['sheet-album', 'sheet-album', '', 'detail sheet: an album (no extra details)'],
+  ['sheet-request', 'sheet-request', 'as=cate', 'detail sheet: a request still in line'],
+  ['sheet-loading', 'sheet-loading', 'as=cate&details=slow', 'detail sheet: details loading'],
+  ['sheet-pull', 'sheet-pull', 'as=cate', 'detail sheet: withdraw, confirm step'],
+  ['line-scanning', 'line-actions', '', "admin: 'imported' scanning, 'nevermind' asking sure?"],
+  ['line-missed', 'line-actions', 'scan=miss', "admin: 'imported' came back not on the shelf yet"],
+  ['form-empty', 'form-empty', '', 'request form, fresh'],
+  ['form-loading', 'form-loading', 'lookup=slow', 'request form: looking'],
+  ['form-results', 'form-results', '', 'request form: results'],
+  ['form-owned', 'form-owned', '', 'request form: already on the shelf'],
+  ['form-album', 'form-album', '', 'request form: albums'],
+  ['form-nomatch', 'form-nomatch', '', 'request form: no matches'],
+  ['form-added', 'form-added', '', 'request form: added toast'],
+  ['shelf-nomatch', 'shelf-nomatch', '', 'shelf search with nothing matching'],
+  ['loading', 'loading', 'shelf=slow&seen=now', 'first load, shelf still coming'],
+  ['empty', 'empty', 'rows=empty&shelf=empty', 'brand new: nothing requested, nothing on the servers'],
+  ['shelf-error', 'shelf-error', 'shelf=fail', 'the shelf function failed (there is no error state today)'],
+]
+const WIDTHS = [
+  { w: 390, h: 844, scale: 2, mobile: true },
+  { w: 1440, h: 900, scale: 1, mobile: false },
+]
+
+// ---- static server for the built harness ----
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' }
+const server = createServer((req, res) => {
+  const p = join(DIST, decodeURIComponent(new URL(req.url, 'http://x').pathname))
+  const file = existsSync(p) && !p.endsWith('\\') && !p.endsWith('/') ? p : join(DIST, 'index.html')
+  try { res.writeHead(200, { 'Content-Type': TYPES[extname(file)] || 'application/octet-stream' }).end(readFileSync(file)) }
+  catch { res.writeHead(404).end() }
+}).listen(0)
+const base = `http://127.0.0.1:${server.address().port}/`
+
+// ---- chrome over CDP ----
+const port = 9300 + Math.floor(Math.random() * 400)
+const profile = resolve('design/.chrome-profile')
+const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, '--hide-scrollbars', '--no-first-run', '--disable-gpu', 'about:blank'], { stdio: 'ignore' })
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+async function cdpUp() {
+  for (let i = 0; i < 100; i++) { try { return await (await fetch(`http://127.0.0.1:${port}/json/version`)).json() } catch { await sleep(100) } }
+  throw new Error('chrome did not start')
+}
+await cdpUp()
+
+function connect(wsUrl) {
+  const ws = new WebSocket(wsUrl)
+  let id = 0
+  const waiting = new Map()
+  ws.onmessage = (m) => {
+    const msg = JSON.parse(m.data)
+    if (msg.id && waiting.has(msg.id)) { const { ok, no } = waiting.get(msg.id); waiting.delete(msg.id); msg.error ? no(new Error(msg.error.message)) : ok(msg.result) }
+  }
+  const send = (method, params = {}) => new Promise((ok, no) => { waiting.set(++id, { ok, no }); ws.send(JSON.stringify({ id, method, params })) })
+  return new Promise((r) => (ws.onopen = () => r({ send, close: () => ws.close() })))
+}
+
+async function shoot([name, scene, extra], vp) {
+  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })).json()
+  const page = await connect(t.webSocketDebuggerUrl)
+  const { send } = page
+  await send('Page.enable'); await send('Runtime.enable')
+  await send('Emulation.setDeviceMetricsOverride', { width: vp.w, height: vp.h, deviceScaleFactor: vp.scale, mobile: vp.mobile })
+  await send('Page.navigate', { url: `${base}?scene=${scene}${extra ? '&' + extra : ''}` })
+  let ready = null
+  for (let i = 0; i < 300 && !ready; i++) {
+    await sleep(100)
+    ready = (await send('Runtime.evaluate', { expression: 'window.__ready || null', returnByValue: true })).result.value
+  }
+  const kind = (await send('Runtime.evaluate', { expression: 'window.__shot', returnByValue: true })).result.value
+  if (kind === 'full') {
+    const h = (await send('Runtime.evaluate', { expression: 'document.documentElement.scrollHeight', returnByValue: true })).result.value
+    await send('Emulation.setDeviceMetricsOverride', { width: vp.w, height: Math.min(h, 14000), deviceScaleFactor: vp.scale, mobile: vp.mobile })
+    await sleep(400)
+  }
+  const { data } = await send('Page.captureScreenshot', { format: 'png' })
+  writeFileSync(join(OUT, `${name}-${vp.w}.png`), Buffer.from(data, 'base64'))
+  page.close()
+  await fetch(`http://127.0.0.1:${port}/json/close/${t.id}`)
+  return ready
+}
+
+mkdirSync(OUT, { recursive: true })
+const list = only.length ? SHOTS.filter((s) => only.includes(s[0])) : SHOTS
+const problems = []
+for (const s of list) {
+  for (const vp of WIDTHS) {
+    const r = await shoot(s, vp)
+    console.log(`${r === 'ok' ? 'ok ' : '!! '} ${s[0]}-${vp.w}${r === 'ok' ? '' : '  ' + r}`)
+    if (r !== 'ok') problems.push(`${s[0]}-${vp.w}: ${r}`)
+  }
+}
+
+// contact sheet: every scene, both widths, side by side
+const rows = SHOTS.filter((s) => existsSync(join(OUT, `${s[0]}-390.png`))).map(([n, , , note]) =>
+  `<section><h2>${n}</h2><p>${note}</p><div class="pair"><img src="${n}-390.png" width="390" loading="lazy"><img src="${n}-1440.png" width="960" loading="lazy"></div></section>`).join('\n')
+writeFileSync(join(OUT, 'index.html'), `<!doctype html><meta charset="utf-8"><title>movie night: ${label}</title>
+<style>body{background:#111;color:#ddd;font:15px system-ui;margin:24px}section{margin:0 0 48px}h2{margin:0;font-size:18px}p{margin:4px 0 12px;color:#999}.pair{display:flex;gap:24px;align-items:flex-start}img{border:1px solid #333;height:auto}</style>
+<h1>${label}</h1>${rows}`)
+
+chrome.kill()
+server.close()
+await sleep(300)
+try { rmSync(profile, { recursive: true, force: true }) } catch {}
+if (problems.length) { console.log('\nproblems:\n' + problems.join('\n')); process.exitCode = 1 }

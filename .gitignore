@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# design harness output
+design/fixture/
+design/shots/
+design/harness-dist/
+design/.chrome-profile/

@@ -40,8 +40,8 @@ EOF
 ### What the frontend depends on
 
 - `media_requests`: one row per ask. `status` is `requested`, `grabbed` or
-  `imported` (CHECK constraint). "grabbed" is retired in the UI but the value is
-  still allowed and one old row still has it, so the UI keeps a fallback.
+  `imported` (CHECK constraint). "grabbed" is retired in the UI. No row uses it as
+  of 2026-09-23, but the constraint still allows it, so the UI keeps a fallback.
 - `media_events`: the trail. **Written only by the `media_requests_log`
   trigger**, never by the app. `imported` events credit
   `coalesce(imported_by, auth.uid(), requested_by)`.
@@ -169,7 +169,7 @@ src/App.jsx              the whole app: Marquee, SignIn, Feed, Greeting, Sheet, 
 src/index.css            every style; tokens at the top of :root
 src/lib/supabase.js      the client
 supabase-functions/      canonical copies of the five edge functions
-design/                  screenshot harness (see the design phases)
+design/                  screenshot harness, see design/README.md
 ```
 
 Stack: React 19 + Vite 8, plain JS, no router, no state library, no CSS
