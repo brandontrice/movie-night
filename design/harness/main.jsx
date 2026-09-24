@@ -97,6 +97,9 @@ Object.assign(SCENES, {
     // browser layer: shoot.mjs must fail this and count exactly one blocked write (TEST-NET address, goes nowhere)
     await fetch('http://192.0.2.1/harness-selftest', { method: 'POST' }).catch(() => {})
   } },
+  // keyboard focus, no clicks: the ring on paper (a shelf play link) and on night (the request button)
+  'focus-paper':     { shot: 'view', run: async () => { await dismissGreeting(); const a = await find(() => q('.shelf .btn')); a.focus({ focusVisible: true }); scrollToBlock('the shelf') } },
+  'focus-night':     { shot: 'view', run: async () => { await dismissGreeting(); (await find(() => q('.fab'))).focus({ focusVisible: true }) } },
   'line':          { shot: 'view', run: async () => { await dismissGreeting(); await loaded(); scrollToBlock('the line'); await sleep(300) } },
   'form-empty':      { shot: 'view', run: async () => { await dismissGreeting(); await click('.fab'); scrollTo(0, 0) } },
   'form-results':    { shot: 'view', run: async () => { await dismissGreeting(); await click('.fab'); await type('.stub-form input', 'the notebook'); await find(() => q('.results:not(.skeleton) li')); await sleep(700) } },

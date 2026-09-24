@@ -15,6 +15,8 @@ node design/capture-data.mjs                       # read-only: tables over ssh,
 npx vite build --config design/vite.config.js
 node design/shoot.mjs before                       # every scene -> design/shots/before/ + index.html
 node design/shoot.mjs p1 feed sheet-movie          # just the named scenes -> design/shots/p1/
+REDUCED=1 node design/shoot.mjs p1-reduced feed    # with prefers-reduced-motion: reduce
+node design/compare.mjs before p1                  # side by side -> design/shots/compare-before-p1.html
 ```
 
 Open `design/shots/<label>/index.html` for the contact sheet. **Re-capturing data changes the

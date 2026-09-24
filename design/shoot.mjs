@@ -11,6 +11,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node
 import { extname, join, resolve } from 'node:path'
 
 const [label = 'current', ...only] = process.argv.slice(2)
+// REDUCED=1 shoots with prefers-reduced-motion: reduce
+const REDUCED = process.env.REDUCED === '1'
 const DIST = resolve('design/harness-dist')
 const OUT = resolve('design/shots', label)
 const CHROME = [
@@ -44,6 +46,8 @@ export const SHOTS = [
   ['shelf-nomatch', 'shelf-nomatch', '', 'shelf search with nothing matching'],
   ['loading', 'loading', 'shelf=slow&seen=now', 'first load, shelf still coming'],
   ['empty', 'empty', 'rows=empty&shelf=empty', 'brand new: nothing requested, nothing on the servers'],
+  ['focus-paper', 'focus-paper', '', 'keyboard focus on paper'],
+  ['focus-night', 'focus-night', '', 'keyboard focus on night'],
   ['shelf-error', 'shelf-error', 'shelf=fail', 'the shelf function failed (there is no error state today)'],
 ]
 const WIDTHS = [
@@ -96,11 +100,13 @@ async function shoot([name, scene, extra], vp, { expectBlocked = 0 } = {}) {
   const blocked = []
   page.on('Fetch.requestPaused', ({ requestId, request }) => {
     const read = ['GET', 'HEAD', 'OPTIONS'].includes(request.method) || request.url.startsWith(base)
-    if (read) return send('Fetch.continueRequest', { requestId })
+    if (read) return send('Fetch.continueRequest', { requestId }).catch(() => {}) // the page may already be closing
     blocked.push(`${request.method} ${request.url}`)
-    send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' })
+    send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' }).catch(() => {})
   })
   await send('Fetch.enable', { patterns: [{ urlPattern: '*' }] })
+  await send('Emulation.setFocusEmulationEnabled', { enabled: true }) // headless pages are never focused, so :focus would never match
+  if (REDUCED) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
   await send('Emulation.setDeviceMetricsOverride', { width: vp.w, height: vp.h, deviceScaleFactor: vp.scale, mobile: vp.mobile })
   await send('Page.navigate', { url: `${base}?scene=${scene}${extra ? '&' + extra : ''}` })
   let ready = null

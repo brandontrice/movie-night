@@ -97,22 +97,31 @@ always a build of `origin/main`. Line endings are LF everywhere
 **A change is not done until it is deployed and pushed.** Brandon tests against
 the VM, not a dev server.
 
-From the repo root:
+From the repo root, **after committing**, so the release is named for a real
+commit:
 
 ```bash
-npm run build
-scp -r dist/* btrice9595@192.168.1.118:/home/btrice9595/movie-night/
-curl -s http://192.168.1.118:8081/ | grep -o 'index-[A-Za-z0-9_-]*\.\(js\|css\)'
+npm run deploy                 # build, upload, switch, verify, prune
+npm run deploy -- --rollback   # back to the previous release
+curl -s http://192.168.1.118:8081/release.txt
 ```
 
-The hashes `curl` prints must match the ones `npm run build` just printed.
-The Windows PC has key-based ssh to the VM, so there is no password prompt.
+`scripts/deploy.mjs` builds, uploads `dist/` into a fresh
+`~/movie-night-releases/<utc stamp>-<commit>`, then atomically repoints the
+symlink `~/movie-night` (nginx's root) at it. It fails loudly unless the served
+page references exactly the bundle it just built and `release.txt` names the
+new release. The newest 3 releases are kept, so stale bundles age out with
+their release; a `-dirty` suffix means the tree had uncommitted changes.
+`0-legacy` is the flat directory from before releases (Sep 2026) and is pruned
+like any other. The Windows PC has key-based ssh to the VM.
 
-**Stale assets:** `scp` only adds files, so every deploy leaves the previous
-`index-*.js` / `index-*.css` behind in `/home/btrice9595/movie-night/assets/`
-(about 50 as of Sep 2026). They are harmless, since `index.html` only points at
-the new pair, but deploys should eventually clear them. Do not bolt a `rm` onto
-the ritual without Brandon approving the replacement.
+Never `scp` into `~/movie-night` directly any more: it is a symlink into a
+release, so you would be editing a past deploy in place.
+
+nginx (`/etc/nginx/sites-available/movie-night`) sends `no-cache` for
+`index.html` and `release.txt` and a one-year `immutable` for the hashed files in
+`/assets/`, so a deploy reaches phones on the next load. Changing it needs sudo:
+Brandon runs those commands himself.
 
 ### Edge functions
 

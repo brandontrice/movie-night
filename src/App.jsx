@@ -7,6 +7,20 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
 // album art comes through the shelf function so navidrome credentials stay on the server
 const art = (u) => (u && u.startsWith('art:') ? `${SUPABASE_URL}/functions/v1/shelf?apikey=${encodeURIComponent(ANON)}&art=${encodeURIComponent(u.slice(4))}` : u)
+// ask for about the pixels a slot shows at 2x, not the 450px-tall poster the shelf function asks for.
+// jellyfin takes any maxHeight; tmdb has fixed widths (height is 1.5x). album art through the shelf proxy is fixed server-side.
+const TMDB_W = [[138, 'w92'], [231, 'w154'], [278, 'w185'], [Infinity, 'w342']]
+function sized(u, h) {
+  if (!u) return u
+  if (u.includes('/Images/Primary')) return u.replace(/maxHeight=\d+/, `maxHeight=${h}`)
+  if (u.includes('image.tmdb.org/t/p/w')) return u.replace(/\/t\/p\/w\d+\//, `/t/p/${TMDB_W.find(([max]) => h <= max)[1]}/`)
+  return u
+}
+// localStorage can throw (private windows, blocked storage); the greeting just shows again next time
+const store = {
+  get: (k) => { try { return localStorage.getItem(k) } catch { return null } },
+  set: (k, v) => { try { localStorage.setItem(k, v) } catch { /* nothing to remember with */ } },
+}
 
 const READY = { movie: 'ready to watch', show: 'ready to watch', album: 'ready to listen' }
 const TRAIL = {
@@ -235,8 +249,6 @@ function Feed({ session }) {
 
   // the three populations
   const pending = useMemo(() => rows.filter((r) => r.status !== 'imported'), [rows])
-  const waiting = pending.filter((r) => r.status === 'requested')
-  const grabbing = pending.filter((r) => r.status === 'grabbed')
   // what's actually on the servers, with the matching request attached when there is one
   const ready = useMemo(() => {
     const byItem = {}
@@ -272,9 +284,6 @@ function Feed({ session }) {
     return ready.filter((r) => new Date(r.imported_at || r.created_at).getTime() < cutoff).length
   }, [ready])
 
-  async function setStatus(id, status) {
-    await supabase.from('media_requests').update({ status }).eq('id', id)
-  }
   // pulling a ticket: only while it's still just requested, only your own (brandon can pull any)
   const [pulling, setPulling] = useState({})
   const canPull = (r) => r.status === 'requested' && (isAdmin || r.requested_by === session.user.id)
@@ -311,30 +320,14 @@ function Feed({ session }) {
     return Object.keys(by).sort((a, b) => (a === adder) - (b === adder)).map((uid) => ({ uid, rows: by[uid] }))
   }, [pending, adder])
   // the mark you last left. frozen for this visit so the shelf stays lit while you look; advanced when you dismiss the greeting
-  const seenAtMount = useRef(localStorage.getItem(SEEN_KEY) || '')
+  const seenAtMount = useRef(store.get(SEEN_KEY) || '')
   const isFresh = (a) => !seenAtMount.current || a.at > seenAtMount.current
   const freshKeys = useMemo(() => new Set(arrivals.filter(isFresh).map((a) => a.row.id)), [arrivals])
   const openRow = open ? (open.fromLibrary ? ready.find((r) => r.id === open.id) || open : rows.find((r) => r.id === open.id) || open) : null
 
-  function Row({ r }) {
-    const isNew = seen.current && !seen.current.has(r.id)
-    if (isNew) seen.current.add(r.id)
-    return (
-      <li className={'row ' + r.status + (isNew ? ' tear' : '')} onClick={(e) => { if (!e.target.closest('a,button')) setOpen(r) }}>
-        <span className="row-title">{r.title}{r.year ? <span className="year"> {r.year}</span> : null}{r.artist ? <span className="year"> · {r.artist}</span> : null}</span>
-        <span className="row-when">{timeAgo(r.created_at)}</span>
-        {r.status === 'grabbed' && <span className={'badge grabbed' + (thud[r.id] ? ' thud' : '')}>grabbing</span>}
-        {(isAdmin || canPull(r)) && (
-          <span className="row-actions">
-            {isAdmin && <button className={'btn tiny' + (scanning[r.id] ? ' busy' : '') + (missed[r.id] ? ' missed' : '')} disabled={!!scanning[r.id]} onClick={() => markImported(r.id)}>{scanning[r.id] ? 'scanning' : missed[r.id] ? 'not on the shelf yet' : 'imported'}</button>}
-            {canPull(r) && (pulling[r.id]
-              ? <button className="btn tiny pull sure" onClick={() => pull(r.id)}>sure?</button>
-              : <button className="link tiny pull" onClick={() => askPull(r.id)}>nevermind</button>)}
-          </span>
-        )}
-      </li>
-    )
-  }
+  // rows that turned up after the first load get the tear-in; each id only ever gets it once
+  const newIds = useMemo(() => new Set(seen.current ? pending.filter((r) => !seen.current.has(r.id)).map((r) => r.id) : []), [pending])
+  useEffect(() => { for (const id of newIds) seen.current?.add(id) }, [newIds])
 
   return (
     <main className="queue">
@@ -373,7 +366,7 @@ function Feed({ session }) {
                 {nowShowing.map((r, i) => (
                   <li key={r.id} className={(i === 0 ? 'lead' : '') + (r.played ? ' watched' : '')}>
                     <a href={r.play_url || '#'} onClick={(e) => { if (!r.play_url) { e.preventDefault(); setOpen(r) } }} target={r.play_url ? '_blank' : undefined} rel="noreferrer">
-                      {r.poster_url ? <img src={r.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="poster blank" />}
+                      {r.poster_url ? <img src={sized(r.poster_url, i === 0 ? 400 : 320)} alt="" width={i === 0 ? 132 : 104} height={i === 0 ? 198 : 156} loading={i < 3 ? 'eager' : 'lazy'} fetchPriority={i === 0 ? 'high' : undefined} decoding="async" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="poster blank" />}
                       <span className="rail-title">{r.title}{r.played ? <span className="seen"> seen</span> : null}</span>
                     </a>
                   </li>
@@ -400,7 +393,13 @@ function Feed({ session }) {
                         <span className="count">{list.length}</span>
                       </h3>
                       <ul className="line">
-                        {(all ? list : list.slice(0, 5)).map((r) => <Row key={r.id} r={r} />)}
+                        {(all ? list : list.slice(0, 5)).map((r) => (
+                          <LineRow
+                            key={r.id} r={r} isNew={newIds.has(r.id)} thud={!!thud[r.id]} isAdmin={isAdmin}
+                            scanning={!!scanning[r.id]} missed={!!missed[r.id]} canPull={canPull(r)} pulling={!!pulling[r.id]}
+                            onOpen={setOpen} onImported={markImported} onAskPull={askPull} onPull={pull}
+                          />
+                        ))}
                       </ul>
                       {list.length > 5 && (
                         <button className="link" onClick={() => setLineAll((v) => ({ ...v, [uid]: !all }))}>{all ? 'show fewer' : `see all ${list.length}`}</button>
@@ -429,7 +428,7 @@ function Feed({ session }) {
               <ul className="shelf">
                 {shelf.slice(0, shelfPage * PAGE).map((r) => (
                   <li key={r.id} className={'row imported' + (freshKeys.has(r.id) ? ' fresh' : '')} onClick={(e) => { if (!e.target.closest('a,button')) setOpen(r) }}>
-                    {r.poster_url ? <img className="thumb" src={r.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
+                    {r.poster_url ? <img className="thumb" src={sized(r.poster_url, 96)} alt="" width="28" height="42" loading="lazy" decoding="async" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
                     <span className="row-title">{r.title}{r.year ? <span className="year"> {r.year}</span> : null}{r.artist ? <span className="year"> · {r.artist}</span> : null}</span>
                     {isRecent(r) && <span className="tag new">new</span>}
                     {r.requested_by && <span className="for" style={{ '--c': profiles[r.requested_by]?.color || '#999' }}>for {r.requested_by === session.user.id ? 'you' : who(r.requested_by)}</span>}
@@ -477,6 +476,26 @@ function Feed({ session }) {
         <button className="link" onClick={() => supabase.auth.signOut()}>sign out</button>
       </footer>
     </main>
+  )
+}
+
+// one ticket in the line. it lives out here, not inside Feed, so it keeps its identity between renders:
+// no remount on every realtime reload, no replayed tear, and a button you're focused on stays put.
+function LineRow({ r, isNew, thud, isAdmin, scanning, missed, canPull, pulling, onOpen, onImported, onAskPull, onPull }) {
+  return (
+    <li className={'row ' + r.status + (isNew ? ' tear' : '')} onClick={(e) => { if (!e.target.closest('a,button')) onOpen(r) }}>
+      <span className="row-title">{r.title}{r.year ? <span className="year"> {r.year}</span> : null}{r.artist ? <span className="year"> · {r.artist}</span> : null}</span>
+      <span className="row-when">{timeAgo(r.created_at)}</span>
+      {r.status === 'grabbed' && <span className={'badge grabbed' + (thud ? ' thud' : '')}>grabbing</span>}
+      {(isAdmin || canPull) && (
+        <span className="row-actions">
+          {isAdmin && <button className={'btn tiny' + (scanning ? ' busy' : '') + (missed ? ' missed' : '')} disabled={scanning} onClick={() => onImported(r.id)}>{scanning ? 'scanning' : missed ? 'not on the shelf yet' : 'imported'}</button>}
+          {canPull && (pulling
+            ? <button className="btn tiny pull sure" onClick={() => onPull(r.id)}>sure?</button>
+            : <button className="link tiny pull" onClick={() => onAskPull(r.id)}>nevermind</button>)}
+        </span>
+      )}
+    </li>
   )
 }
 
@@ -538,7 +557,7 @@ function Greeting({ arrivals, isFresh, loaded, who, profiles, me, onOpen }) {
   }, [arrivals, loaded])
 
   function dismiss() {
-    localStorage.setItem(SEEN_KEY, arrivals[0]?.at || new Date().toISOString())
+    store.set(SEEN_KEY, arrivals[0]?.at || new Date().toISOString())
     setShow(false)
   }
 
@@ -574,7 +593,7 @@ function Greeting({ arrivals, isFresh, loaded, who, profiles, me, onOpen }) {
       <div className="reel-toasts" aria-live="polite">
         {toasts.map(({ id, a }) => (
           <button key={id} className="reel-toast" onClick={() => { setToasts((t) => t.filter((x) => x.id !== id)); onOpen(a.row) }}>
-            {a.row.poster_url ? <img src={a.row.poster_url} alt="" /> : <span className="thumb blank" />}
+            {a.row.poster_url ? <img src={sized(a.row.poster_url, 110)} alt="" width="34" height="51" decoding="async" /> : <span className="thumb blank" />}
             <span>
               <span className="reel-line">{line(a)}</span>
               <span className="reel-when">{when(a.at)}</span>
@@ -596,7 +615,7 @@ function Greeting({ arrivals, isFresh, loaded, who, profiles, me, onOpen }) {
                     {list.map((a) => (
                       <li key={a.id}>
                         <button className="reel-item" onClick={() => { dismiss(); onOpen(a.row) }}>
-                          {a.row.poster_url ? <img src={a.row.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
+                          {a.row.poster_url ? <img src={sized(a.row.poster_url, 110)} alt="" width="34" height="51" loading="lazy" decoding="async" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
                           <span className="reel-body">
                             <span className="reel-title">{a.row.title}{a.row.artist ? <span className="reel-sub"> {a.row.artist}</span> : null}</span>
                             <span className="reel-when">{name(a) ? `${name(a)} added it, ` : ''}{when(a.at)}</span>
@@ -654,7 +673,7 @@ function Sheet({ row, trail, who, cache, isAdmin, scanning, missed, onImported, 
       <section className="sheet" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-hero" style={d?.backdrop_url ? { backgroundImage: `url(${d.backdrop_url})` } : undefined}>
           <button className="sheet-close" onClick={onClose} aria-label="close">close</button>
-          {(d?.poster_url || row.poster_url) && <img className="sheet-poster" src={d?.poster_url || row.poster_url} alt="" onError={(e) => (e.currentTarget.style.display = 'none')} />}
+          {(d?.poster_url || row.poster_url) && <img className="sheet-poster" src={sized(d?.poster_url || row.poster_url, 300)} alt="" width="92" height="138" decoding="async" onError={(e) => (e.currentTarget.style.display = 'none')} />}
           <div className="sheet-titles">
             <h2>{row.title}</h2>
             {row.artist && <div className="sheet-sub">{row.artist}</div>}
@@ -809,7 +828,7 @@ function AddForm({ user, type, listed, onDone }) {
             {results.candidates.map((c, i) => (
               <li key={c.external_id} style={{ '--i': i }} className={listed.has(c.external_id) ? 'listed' : ''}>
                 <button type="button" disabled={busy || listed.has(c.external_id)} onClick={() => add(c)}>
-                  {c.poster_url ? <img src={c.poster_url} alt="" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="noposter" />}
+                  {c.poster_url ? <img src={sized(c.poster_url, 120)} alt="" width="36" height="54" loading="lazy" decoding="async" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="noposter" />}
                   <span>
                     <strong>{c.title}</strong>{c.year ? ` ${c.year}` : ''}
                     {c.artist && <em>{c.artist}</em>}
