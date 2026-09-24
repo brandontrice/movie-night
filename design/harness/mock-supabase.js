@@ -20,8 +20,20 @@ const never = () => new Promise(() => {})
 const readOnly = (what) => { throw new Error(`harness is read-only: refused ${what}`) }
 const later = (v, ms = 0) => new Promise((r) => setTimeout(() => r(v), ms))
 
+// line=long is a layout stress case, not a picture of the real line: each person's most recent real imported
+// requests are shown as still waiting, so both columns run to a dozen real titles. shot notes say so.
+const lineMode = P.get('line') || 'ok'          // ok | long
+function longLine(requests) {
+  const extra = new Set()
+  for (const p of data.profiles) {
+    const waiting = requests.filter((r) => r.requested_by === p.user_id && r.status !== 'imported').length
+    requests.filter((r) => r.requested_by === p.user_id && r.status === 'imported').slice(0, Math.max(0, 12 - waiting)).forEach((r) => extra.add(r.id))
+  }
+  return requests.map((r) => (extra.has(r.id) ? { ...r, status: 'requested', play_url: null, library_item_id: null, imported_at: null } : r))
+}
+
 const tables = {
-  media_requests: rowsMode === 'empty' ? [] : data.requests,
+  media_requests: rowsMode === 'empty' ? [] : lineMode === 'long' ? longLine(data.requests) : data.requests,
   media_events: rowsMode === 'empty' ? [] : data.events,
   profiles: data.profiles,
 }

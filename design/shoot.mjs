@@ -49,6 +49,12 @@ export const SHOTS = [
   ['focus-paper', 'focus-paper', '', 'keyboard focus on paper'],
   ['focus-night', 'focus-night', '', 'keyboard focus on night'],
   ['shelf-error', 'shelf-error', 'shelf=fail', 'the shelf function failed (there is no error state today)'],
+  // desktop-only checks: an optional fifth entry overrides the viewports
+  ['sidebar-stuck', 'sidebar', 'seen=now', 'desktop, scrolled down: the line fits under the sign, so it sticks', [{ w: 1440, h: 900, scale: 1, mobile: false }, { w: 1366, h: 768, scale: 1, mobile: false }]],
+  ['sidebar-full', 'sidebar-full', 'seen=now&line=long', 'desktop, scrolled down, both columns full: too tall to stick, so it scrolls with the page. STRESS FIXTURE: real titles, some forced into the line', [{ w: 1440, h: 900, scale: 1, mobile: false }, { w: 1366, h: 768, scale: 1, mobile: false }]],
+  ['sidebar-full-top', 'sidebar-full-top', 'seen=now&line=long', 'the same, scrolled just into the line: every row is reachable by scrolling. STRESS FIXTURE', [{ w: 1440, h: 900, scale: 1, mobile: false }, { w: 1366, h: 768, scale: 1, mobile: false }]],
+  ['sidebar-page', 'sidebar-page', 'seen=now&line=long', 'the whole page with both columns full. STRESS FIXTURE', [{ w: 1366, h: 768, scale: 1, mobile: false }]],
+  ['lights', 'lights', 'lights=1&seen=now', 'the house lights partway through dimming (first load of a session only)'],
 ]
 const WIDTHS = [
   { w: 390, h: 844, scale: 2, mobile: true },
@@ -114,6 +120,7 @@ async function shoot([name, scene, extra], vp, { expectBlocked = 0 } = {}) {
     await sleep(100)
     ready = (await send('Runtime.evaluate', { expression: 'window.__ready || null', returnByValue: true })).result.value
   }
+  const note = (await send('Runtime.evaluate', { expression: 'window.__note || null', returnByValue: true })).result.value
   if (expectBlocked) ready = ready === 'ok' && blocked.length === expectBlocked ? 'ok' : `error: expected ${expectBlocked} blocked write(s), saw ${blocked.length} (${ready})`
   else if (blocked.length) ready = `error: blocked a write: ${blocked[0]}`
   const kind = (await send('Runtime.evaluate', { expression: 'window.__shot', returnByValue: true })).result.value
@@ -122,35 +129,44 @@ async function shoot([name, scene, extra], vp, { expectBlocked = 0 } = {}) {
     await send('Emulation.setDeviceMetricsOverride', { width: vp.w, height: Math.min(h, 14000), deviceScaleFactor: vp.scale, mobile: vp.mobile })
     await sleep(400)
   }
-  if (expectBlocked) { page.close(); await fetch(`http://127.0.0.1:${port}/json/close/${t.id}`); return ready }
+  if (expectBlocked) { page.close(); await fetch(`http://127.0.0.1:${port}/json/close/${t.id}`); return { ready } }
   const { data } = await send('Page.captureScreenshot', { format: 'png' })
   writeFileSync(join(OUT, `${name}-${vp.w}.png`), Buffer.from(data, 'base64'))
   page.close()
   await fetch(`http://127.0.0.1:${port}/json/close/${t.id}`)
-  return ready
+  return { ready, note }
 }
 
 // the read-only guards have to prove themselves before any picture is taken
-const test = await shoot(['selftest', 'selftest', ''], WIDTHS[0], { expectBlocked: 1 })
+const { ready: test } = await shoot(['selftest', 'selftest', ''], WIDTHS[0], { expectBlocked: 1 })
 if (test !== 'ok') { console.log(`selftest failed, nothing shot: ${test}`); chrome.kill(); server.close(); process.exit(1) }
 console.log('selftest ok: driver, click listener, stub client and browser all refuse writes')
 
 mkdirSync(OUT, { recursive: true })
 const list = only.length ? SHOTS.filter((s) => only.includes(s[0])) : SHOTS
 const problems = []
+const notes = {}
 for (const s of list) {
-  for (const vp of WIDTHS) {
-    const r = await shoot(s, vp)
-    console.log(`${r === 'ok' ? 'ok ' : '!! '} ${s[0]}-${vp.w}${r === 'ok' ? '' : '  ' + r}`)
+  for (const vp of s[4] ?? WIDTHS) {
+    const { ready: r, note } = await shoot(s, vp)
+    if (note) notes[`${s[0]}-${vp.w}`] = note
+    console.log(`${r === 'ok' ? 'ok ' : '!! '} ${s[0]}-${vp.w}${r === 'ok' ? '' : '  ' + r}${note ? '   ' + note : ''}`)
     if (r !== 'ok') problems.push(`${s[0]}-${vp.w}: ${r}`)
   }
 }
 
-// contact sheet: every scene, both widths, side by side
-const rows = SHOTS.filter((s) => existsSync(join(OUT, `${s[0]}-390.png`))).map(([n, , , note]) =>
-  `<section><h2>${n}</h2><p>${note}</p><div class="pair"><img src="${n}-390.png" width="390" loading="lazy"><img src="${n}-1440.png" width="960" loading="lazy"></div></section>`).join('\n')
+// contact sheet: every scene at every size it was shot at, with what the scene measured
+const notesFile = join(OUT, 'notes.json')
+const allNotes = { ...(existsSync(notesFile) ? JSON.parse(readFileSync(notesFile, 'utf8')) : {}), ...notes }
+writeFileSync(notesFile, JSON.stringify(allNotes, null, 1))
+const rows = SHOTS.map(([n, , , note, vps]) => {
+  const shot = (vps ?? WIDTHS).filter((v) => existsSync(join(OUT, `${n}-${v.w}.png`)))
+  if (!shot.length) return ''
+  const figs = shot.map((v) => `<figure><img src="${n}-${v.w}.png" width="${v.w === 390 ? 390 : 960}" loading="lazy"><figcaption>${v.w}x${v.h}${allNotes[`${n}-${v.w}`] ? ': ' + allNotes[`${n}-${v.w}`] : ''}</figcaption></figure>`).join('')
+  return `<section><h2>${n}</h2><p>${note}</p><div class="pair">${figs}</div></section>`
+}).join('\n')
 writeFileSync(join(OUT, 'index.html'), `<!doctype html><meta charset="utf-8"><title>movie night: ${label}</title>
-<style>body{background:#111;color:#ddd;font:15px system-ui;margin:24px}section{margin:0 0 48px}h2{margin:0;font-size:18px}p{margin:4px 0 12px;color:#999}.pair{display:flex;gap:24px;align-items:flex-start}img{border:1px solid #333;height:auto}</style>
+<style>body{background:#111;color:#ddd;font:15px system-ui;margin:24px}section{margin:0 0 48px}h2{margin:0;font-size:18px}p{margin:4px 0 12px;color:#999}.pair{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}figure{margin:0}figcaption{color:#999;margin-top:4px}img{border:1px solid #333;height:auto;display:block}</style>
 <h1>${label}</h1>${rows}`)
 
 chrome.kill()

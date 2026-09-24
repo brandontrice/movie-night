@@ -15,6 +15,9 @@ class FrozenDate extends RealDate {
 }
 globalThis.Date = FrozenDate
 
+// the house lights dim once per session; shots skip it unless a scene asks (?lights=1)
+if (P.get('lights') !== '1') sessionStorage.setItem('movie-night:house-lights', 'harness')
+
 // what "since you were last here" compares against: 3 days back shows the greeting, now shows nothing new
 const SEEN_KEY = 'movie-night:reel-seen'
 const SCENES = window.__SCENES = {}
@@ -61,7 +64,8 @@ async function type(sel, value) {
   el.dispatchEvent(new Event('input', { bubbles: true }))
 }
 const loaded = () => find(() => q('.shelf, .block .hint'))
-const dismissGreeting = async () => { await click('.greet .primary'); await sleep(100) }
+// the greeting only shows when something landed since the last visit; dismiss it if it's there
+const dismissGreeting = async () => { await loaded(); await sleep(150); if (q('.greet .primary')) { await click('.greet .primary'); await sleep(100) } }
 
 const shelfItems = data.shelf?.items ?? []
 const firstOf = (type) => shelfItems.find((i) => i.type === type && (type === 'album' || data.details[`${type}:${i.external_id}`]))
@@ -100,7 +104,15 @@ Object.assign(SCENES, {
   // keyboard focus, no clicks: the ring on paper (a shelf play link) and on night (the request button)
   'focus-paper':     { shot: 'view', run: async () => { await dismissGreeting(); const a = await find(() => q('.shelf .btn')); a.focus({ focusVisible: true }); scrollToBlock('the shelf') } },
   'focus-night':     { shot: 'view', run: async () => { await dismissGreeting(); (await find(() => q('.fab'))).focus({ focusVisible: true }) } },
-  'line':          { shot: 'view', run: async () => { await dismissGreeting(); await loaded(); scrollToBlock('the line'); await sleep(300) } },
+  // desktop sidebar: scroll well down, then check the rule. a stuck sidebar must end above the request button's
+  // clearance; one that doesn't fit must not be sticky. "see all" only shows more rows, so it's safe to press.
+  'sidebar':         { shot: 'view', run: () => sidebar(false, 1600) },
+  'sidebar-full':    { shot: 'view', run: () => sidebar(true, 1600) },
+  'sidebar-full-top':{ shot: 'view', run: () => sidebar(true, 520) },
+  'sidebar-page':    { shot: 'full', run: () => sidebar(true, 0) },
+  // the house lights, caught partway through the dim
+  'lights':          { shot: 'view', settle: 0, run: async () => { await find(() => q('.room.house-lights')); await sleep(450) } },
+  'line':        { shot: 'view', run: async () => { await dismissGreeting(); await loaded(); scrollToBlock('the line'); await sleep(300) } },
   'form-empty':      { shot: 'view', run: async () => { await dismissGreeting(); await click('.fab'); scrollTo(0, 0) } },
   'form-results':    { shot: 'view', run: async () => { await dismissGreeting(); await click('.fab'); await type('.stub-form input', 'the notebook'); await find(() => q('.results:not(.skeleton) li')); await sleep(700) } },
   'form-owned':      { shot: 'view', run: async () => { await dismissGreeting(); await click('.fab'); await type('.stub-form input', data.owned_query); await find(() => q('.owned')); await sleep(700) } },
@@ -114,9 +126,22 @@ Object.assign(SCENES, {
   'empty':           { shot: 'full', run: async () => { await find(() => byText('.block .hint', 'nothing on the servers')) } },
   'shelf-error':     { shot: 'full', run: async () => { await dismissGreeting().catch(() => {}); await find(() => byText('.block .hint', 'nothing on the servers')) } },
 })
+async function sidebar(expand, y) {
+  await dismissGreeting(); await loaded()
+  while (expand && byText('.line-col .link.more', 'see all')) { await click('.line-col .link.more', 'see all'); await sleep(50) }
+  await sleep(300)
+  scrollTo(0, y); await sleep(500)
+  const el = q('.line-block')
+  const r = el.getBoundingClientRect()
+  const stuck = getComputedStyle(el).position === 'sticky'
+  const room = innerHeight - 88
+  if (stuck && r.bottom > room + 1) throw new Error(`sidebar is sticky but cut off: ends at ${Math.round(r.bottom)}, room to ${room}`)
+  window.__note = `sidebar ${stuck ? 'sticks' : 'scrolls with the page'}: ${Math.round(r.height)}px tall, viewport ${innerHeight}px`
+}
+
 // the marquee is sticky, so land the block a little below it rather than under it
 function scrollToBlock(heading) {
-  const b = byText('.block .h', heading).closest('.block')
+  const b = byText('.block .sec-title', heading).closest('.block')
   scrollTo(0, b.getBoundingClientRect().top + scrollY - 170)
 }
 async function shelfFilter(label) { await click('.shelf-tools .chip', label); await sleep(100) }
@@ -133,7 +158,7 @@ createRoot(document.getElementById('root')).render(createElement(StrictMode, nul
 
 try {
   await s.run()
-  await sleep(900) // let entrance animations land
+  await sleep(s.settle ?? 900) // let entrance animations land
   await document.fonts?.ready
   window.__ready = violation ? 'error: ' + violation : 'ok'
 } catch (e) {

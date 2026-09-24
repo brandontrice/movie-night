@@ -30,25 +30,51 @@ const TRAIL = {
   watched: (who) => `${who} watched it`,
 }
 
-// the numbers under the sign: what's waiting, then what's on the shelf by type
+// the numbers under the sign: what's waiting, then what's on the shelf by type.
+// two groups so a phone can stack them as two whole lines; the dots between bits are drawn by css,
+// so a wrapped line never starts with one
 function Tagline({ pending, ready }) {
   const n = { movie: 0, show: 0, album: 0 }
   for (const r of ready) if (r.type in n) n[r.type]++
-  const bits = [[pending, 'in line'], ...TYPES.filter((t) => n[t]).map((t) => [n[t], `${t}${n[t] === 1 ? '' : 's'}`])]
+  const shelf = TYPES.filter((t) => n[t]).map((t) => [n[t], `${t}${n[t] === 1 ? '' : 's'}`])
+  const bit = ([num, label]) => <span key={label} className="tag-bit"><strong>{num}</strong> {label}</span>
   return (
     <p className="tagline">
       <span className="tag-rule" aria-hidden="true" />
       <span className="tag-bits">
-        {bits.map(([num, label], i) => (
-          <span key={label} className="tag-bit">
-            {i > 0 && <span className="tag-sep" aria-hidden="true">&middot;</span>}
-            <strong>{num}</strong> {label}
-          </span>
-        ))}
+        <span className="tag-group">{bit([pending, 'in line'])}</span>
+        {shelf.length > 0 && <span className="tag-group">{shelf.map(bit)}</span>}
       </span>
       <span className="tag-rule" aria-hidden="true" />
     </p>
   )
+}
+
+// a section's board: the title, its ticket number, a gold rule out to the edge, and any links at the end
+function SectionHead({ id, title, count, countTone, children }) {
+  return (
+    <div className="sec-head">
+      <h2 className="sec-title" id={id}>{title}</h2>
+      {count != null && <span className={'ticket-no' + (countTone ? ' ' + countTone : '')}>{count}</span>}
+      <span className="sec-rule" aria-hidden="true" />
+      {children && <span className="sec-links">{children}</span>}
+    </div>
+  )
+}
+
+// the house lights dim once per browser session, on the first load; after that the room is just dark
+const HOUSE_KEY = 'movie-night:house-lights'
+const HOUSE_LIGHTS = (() => {
+  try {
+    if (sessionStorage.getItem(HOUSE_KEY)) return false
+    sessionStorage.setItem(HOUSE_KEY, 'dimmed')
+    return true
+  } catch { return false }
+})()
+
+// the room behind everything: light spilling from the sign, velvet in the margins, grain, a darker floor
+function Room() {
+  return <div className={'room' + (HOUSE_LIGHTS ? ' house-lights' : '')} aria-hidden="true" />
 }
 
 function timeAgo(iso) {
@@ -106,24 +132,25 @@ function Marquee({ children, sticky = false }) {
   const bulbs = useMemo(() => {
     const out = []
     let n = 0
-    const put = (x, y) => out.push({ i: n, x, y, p: n++ % 3 })
-    for (let k = 0; k < TOP; k++) put((k + 0.5) / TOP * 100, 0)             // across the top
-    for (let k = 1; k <= SIDE; k++) put(100, k / (SIDE + 1) * 100)         // down the right
-    for (let k = TOP - 1; k >= 0; k--) put((k + 0.5) / TOP * 100, 100)     // back along the bottom
-    for (let k = SIDE; k >= 1; k--) put(0, k / (SIDE + 1) * 100)           // up the left
+    const put = (x, y, side) => out.push({ i: n, x, y, side, p: n++ % 3 })
+    for (let k = 0; k < TOP; k++) put((k + 0.5) / TOP * 100, 0, 't')             // across the top
+    for (let k = 1; k <= SIDE; k++) put(100, k / (SIDE + 1) * 100, 'r')         // down the right
+    for (let k = TOP - 1; k >= 0; k--) put((k + 0.5) / TOP * 100, 100, 'b')     // back along the bottom
+    for (let k = SIDE; k >= 1; k--) put(0, k / (SIDE + 1) * 100, 'l')           // up the left
     return out
   }, [])
+  // compact, only the bottom row stays lit: the slim sign reads as a letterboard with a strip of lights under it
   return (
-    <div className={'board' + (sticky ? ' sticky' : '') + (compact ? ' compact' : '')}>
+    <header className={'board' + (sticky ? ' sticky' : '') + (compact ? ' compact' : '')}>
       <div className="board-glow" aria-hidden="true" />
       <div className="board-inner">
         <div className="bulbs" aria-hidden="true">
-          {bulbs.map((b) => <span key={b.i} className="bulb" style={{ '--i': b.i, '--p': b.p, left: `${b.x}%`, top: `${b.y}%` }} />)}
+          {bulbs.map((b) => <span key={b.i} className={'bulb ' + b.side} style={{ '--i': b.i, '--p': b.p, left: `${b.x}%`, top: `${b.y}%` }} />)}
         </div>
         <div className="board-face">{children}</div>
       </div>
       <div className="valance" aria-hidden="true" />
-    </div>
+    </header>
   )
 }
 
@@ -134,8 +161,12 @@ export default function App() {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
     return () => sub.subscription.unsubscribe()
   }, [])
-  if (session === undefined) return null
-  return session ? <Feed session={session} /> : <SignIn />
+  return (
+    <>
+      <Room />
+      {session === undefined ? null : session ? <Feed session={session} /> : <SignIn />}
+    </>
+  )
 }
 
 function SignIn() {
@@ -155,14 +186,16 @@ function SignIn() {
     <main className="signin">
       <Marquee>
         <h1 className="marquee">movie night</h1>
-        <p className="tagline">tell brandon what to grab next</p>
+        <p className="tagline">put it on the marquee</p>
       </Marquee>
-      <form onSubmit={submit} className="stub stub-form tear">
+      <div className="ticket-wrap">
+      <form onSubmit={submit} className="stub stub-form ticket tear" aria-label="sign in">
         <label>email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required /></label>
         <label>password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required /></label>
         {error && <p className="error">{error}</p>}
         <button type="submit" className="primary" disabled={busy}>{busy ? 'one sec' : 'sign in'}</button>
       </form>
+      </div>
     </main>
   )
 }
@@ -325,6 +358,11 @@ function Feed({ session }) {
   const freshKeys = useMemo(() => new Set(arrivals.filter(isFresh).map((a) => a.row.id)), [arrivals])
   const openRow = open ? (open.fromLibrary ? ready.find((r) => r.id === open.id) || open : rows.find((r) => r.id === open.id) || open) : null
 
+  // the line sidebar (desktop) only sticks when all of it fits between the compact sign and the request button.
+  // taller than that, it scrolls with the page like everything else, so no row is ever out of reach.
+  const lineRef = useRef(null)
+  const lineSticks = useFitsBelowSign(lineRef)
+
   // rows that turned up after the first load get the tear-in; each id only ever gets it once
   const newIds = useMemo(() => new Set(seen.current ? pending.filter((r) => !seen.current.has(r.id)).map((r) => r.id) : []), [pending])
   useEffect(() => { for (const id of newIds) seen.current?.add(id) }, [newIds])
@@ -350,15 +388,12 @@ function Feed({ session }) {
       )}
 
       <div className="layout">
-        <div className="col-main">
           {/* now showing */}
-          <section className="block">
-            <h2 className="h">
-              now showing
-              {unwatched.length > 0 && <span className="count">{unwatched.length} unwatched</span>}
-              {watchable.length > 1 && <button className="link tiny h-link" onClick={() => setRoll((n) => n + 1)}>reshuffle</button>}
-              {watchable.length > 8 && <button className="link tiny h-link h-link-2" onClick={() => setRailAll((v) => !v)}>{railAll ? 'just a few' : `all ${watchable.length}`}</button>}
-            </h2>
+          <section className="block now" aria-labelledby="sec-now">
+            <SectionHead id="sec-now" title="now showing" count={unwatched.length > 0 ? `${unwatched.length} unwatched` : null}>
+              {watchable.length > 1 && <button className="sec-link" onClick={() => setRoll((n) => n + 1)}>reshuffle</button>}
+              {watchable.length > 8 && <button className="sec-link" onClick={() => setRailAll((v) => !v)}>{railAll ? 'just a few' : `all ${watchable.length}`}</button>}
+            </SectionHead>
             {nowShowing.length === 0 ? (
               <p className="hint dim">{libLoaded ? 'nothing on the servers yet' : 'checking the shelf'}</p>
             ) : (
@@ -376,8 +411,8 @@ function Feed({ session }) {
           </section>
 
           {/* the line */}
-          <section className="block">
-            <h2 className="h">the line <span className="count">{pending.length}</span></h2>
+          <section className={'block line-block' + (lineSticks ? ' stick' : '')} aria-labelledby="sec-line" ref={lineRef}>
+            <SectionHead id="sec-line" title="the line" count={pending.length} />
             {pending.length === 0 ? (
               <p className="hint dim">nothing waiting. ask for something.</p>
             ) : (
@@ -388,7 +423,7 @@ function Feed({ session }) {
                   return (
                     <div key={uid} className="line-col">
                       <h3 className="h sub">
-                        <span className="dot" style={{ background: p?.color || '#999' }} />
+                        <span className="dot" style={{ '--c': p?.color || '#999' }} />
                         {uid === session.user.id ? 'yours' : `${who(uid)}'s`}
                         <span className="count">{list.length}</span>
                       </h3>
@@ -402,7 +437,7 @@ function Feed({ session }) {
                         ))}
                       </ul>
                       {list.length > 5 && (
-                        <button className="link" onClick={() => setLineAll((v) => ({ ...v, [uid]: !all }))}>{all ? 'show fewer' : `see all ${list.length}`}</button>
+                        <button className="link more" onClick={() => setLineAll((v) => ({ ...v, [uid]: !all }))}>{all ? 'show fewer' : `see all ${list.length}`}</button>
                       )}
                     </div>
                   )
@@ -412,8 +447,8 @@ function Feed({ session }) {
           </section>
 
           {/* the shelf */}
-          <section className="block">
-            <h2 className="h">the shelf{freshKeys.size > 0 && <span className="count fresh">{freshKeys.size} new</span>}</h2>
+          <section className="block shelf-block" aria-labelledby="sec-shelf">
+            <SectionHead id="sec-shelf" title="the shelf" count={freshKeys.size > 0 ? `${freshKeys.size} new` : null} countTone="fresh" />
             <div className="shelf-tools">
               <input value={shelfQ} onChange={(e) => { setShelfQ(e.target.value); setShelfPage(1) }} placeholder="search what's been imported" />
               <div className="chips">
@@ -439,11 +474,10 @@ function Feed({ session }) {
               </ul>
             )}
             <div className="actions">
-              {shelf.length > shelfPage * PAGE && <button className="btn" onClick={() => setShelfPage((p) => p + 1)}>load more</button>}
-              {olderCount > 0 && <button className="link" onClick={() => { setShelfOlder((v) => !v); setShelfPage(1) }}>{shelfOlder ? 'hide older than 90 days' : `show ${olderCount} older`}</button>}
+              {shelf.length > shelfPage * PAGE && <button className="btn more" onClick={() => setShelfPage((p) => p + 1)}>load more</button>}
+              {olderCount > 0 && <button className="link more" onClick={() => { setShelfOlder((v) => !v); setShelfPage(1) }}>{shelfOlder ? 'hide older than 90 days' : `show ${olderCount} older`}</button>}
             </div>
           </section>
-        </div>
       </div>
 
       <Greeting arrivals={arrivals} isFresh={isFresh} loaded={rowsLoaded && libLoaded} who={who} profiles={profiles} me={session.user.id} onOpen={(r) => setOpen(r)} />
@@ -473,7 +507,7 @@ function Feed({ session }) {
       )}
 
       <footer className="foot">
-        <button className="link" onClick={() => supabase.auth.signOut()}>sign out</button>
+        <button className="link more" onClick={() => supabase.auth.signOut()}>sign out</button>
       </footer>
     </main>
   )
@@ -497,6 +531,27 @@ function LineRow({ r, isNew, thud, isAdmin, scanning, missed, canPull, pulling, 
       )}
     </li>
   )
+}
+
+// true when the element's whole height fits in the viewport under its sticky top, with room left for the request
+// button. css only applies the sticky position at desktop widths; this just says whether it's safe to.
+const FAB_CLEARANCE = 88
+function useFitsBelowSign(ref) {
+  const [fits, setFits] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const check = () => {
+      const top = parseFloat(getComputedStyle(el).getPropertyValue('--stick-top')) || 0
+      setFits(el.offsetHeight <= window.innerHeight - top - FAB_CLEARANCE)
+    }
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    window.addEventListener('resize', check)
+    check()
+    return () => { ro.disconnect(); window.removeEventListener('resize', check) }
+  }, [ref])
+  return fits
 }
 
 const REEL_DAYS = 7 * 24 * 3600 * 1000
