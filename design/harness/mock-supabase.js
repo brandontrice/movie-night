@@ -23,6 +23,12 @@ const later = (v, ms = 0) => new Promise((r) => setTimeout(() => r(v), ms))
 // line=long is a layout stress case, not a picture of the real line: each person's most recent real imported
 // requests are shown as still waiting, so both columns run to a dozen real titles. shot notes say so.
 const lineMode = P.get('line') || 'ok'          // ok | long
+// watched=some is a stress case too: jellyfin reports nothing as watched today (the played=false bug), so every third
+// movie or show is marked watched to show the dimmed case and its stamp. shot notes say so.
+const watchedMode = P.get('watched') || 'real'  // real | some
+const shelfData = watchedMode === 'some' && data.shelf
+  ? { ...data.shelf, items: data.shelf.items.map((i, k) => (i.type !== 'album' && k % 3 === 1 ? { ...i, played: true } : i)) }
+  : data.shelf
 function longLine(requests) {
   const extra = new Set()
   for (const p of data.profiles) {
@@ -52,7 +58,7 @@ const functions = {
     if (name === 'shelf') {
       if (shelfMode === 'slow') return never()
       if (shelfMode === 'fail') return { data: null, error: new Error('shelf down') }
-      return { data: shelfMode === 'empty' ? { items: [] } : data.shelf, error: null }
+      return { data: shelfMode === 'empty' ? { items: [] } : shelfData, error: null }
     }
     if (name === 'details') {
       if (detailsMode === 'slow') return never()

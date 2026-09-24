@@ -1,21 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
+import { art, sized } from './lib/images'
+import PosterCase, { CaseSkeletons } from './PosterCase'
+import { useMedia } from './lib/useMedia'
 
 const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || '').toLowerCase()
 const TYPES = ['movie', 'show', 'album']
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
-// album art comes through the shelf function so navidrome credentials stay on the server
-const art = (u) => (u && u.startsWith('art:') ? `${SUPABASE_URL}/functions/v1/shelf?apikey=${encodeURIComponent(ANON)}&art=${encodeURIComponent(u.slice(4))}` : u)
-// ask for about the pixels a slot shows at 2x, not the 450px-tall poster the shelf function asks for.
-// jellyfin takes any maxHeight; tmdb has fixed widths (height is 1.5x). album art through the shelf proxy is fixed server-side.
-const TMDB_W = [[138, 'w92'], [231, 'w154'], [278, 'w185'], [Infinity, 'w342']]
-function sized(u, h) {
-  if (!u) return u
-  if (u.includes('/Images/Primary')) return u.replace(/maxHeight=\d+/, `maxHeight=${h}`)
-  if (u.includes('image.tmdb.org/t/p/w')) return u.replace(/\/t\/p\/w\d+\//, `/t/p/${TMDB_W.find(([max]) => h <= max)[1]}/`)
-  return u
-}
 // localStorage can throw (private windows, blocked storage); the greeting just shows again next time
 const store = {
   get: (k) => { try { return localStorage.getItem(k) } catch { return null } },
@@ -228,6 +218,7 @@ function Feed({ session }) {
   const [shelfPage, setShelfPage] = useState(1)
   const [library, setLibrary] = useState([])
   const [libLoaded, setLibLoaded] = useState(false)
+  const [libError, setLibError] = useState(false)
   const [rowsLoaded, setRowsLoaded] = useState(false)
   const detailCache = useRef({})
   const seen = useRef(null)
@@ -257,10 +248,14 @@ function Feed({ session }) {
   }
 
   async function loadLibrary() {
-    const { data } = await supabase.functions.invoke('shelf', { body: {} })
-    setLibrary((data?.items || []).map((i) => ({ ...i, id: i.key, poster_url: art(i.poster_url), status: 'imported', imported_at: i.added_at, created_at: i.added_at, fromLibrary: true })))
+    const { data, error } = await supabase.functions.invoke('shelf', { body: {} })
+    // a failed answer is not an empty shelf: keep what we had and say we couldn't reach the servers
+    if (error || !data || data.error) { setLibError(true); setLibLoaded(true); return }
+    setLibError(false)
+    setLibrary((data.items || []).map((i) => ({ ...i, id: i.key, poster_url: art(i.poster_url), status: 'imported', imported_at: i.added_at, created_at: i.added_at, fromLibrary: true })))
     setLibLoaded(true)
   }
+  function retryLibrary() { setLibError(false); setLibLoaded(false); loadLibrary() }
 
   useEffect(() => {
     loadLibrary()
@@ -303,12 +298,14 @@ function Feed({ session }) {
   const [railAll, setRailAll] = useState(false)
   const watchable = useMemo(() => ready.filter((r) => r.type !== 'album'), [ready])
   const unwatched = useMemo(() => watchable.filter((r) => !r.played), [watchable])
+  const wide = useMedia('(min-width: 1024px)')
+  const picksN = wide ? 13 : 8
   const nowShowing = useMemo(() => {
     const seed = `${new Date().toDateString()}:${roll}`
     const picks = seededShuffle(unwatched, seed)
-    if (railAll || picks.length < 8) picks.push(...seededShuffle(watchable.filter((r) => r.played), seed))
-    return railAll ? picks : picks.slice(0, 8)
-  }, [unwatched, watchable, roll, railAll])
+    if (railAll || picks.length < picksN) picks.push(...seededShuffle(watchable.filter((r) => r.played), seed))
+    return railAll ? picks : picks.slice(0, picksN)
+  }, [unwatched, watchable, roll, railAll, picksN])
   const shelf = useMemo(() => {
     const cutoff = Date.now() - NINETY_DAYS
     const q = shelfQ.trim().toLowerCase()
@@ -398,18 +395,28 @@ function Feed({ session }) {
           <section className="block now" aria-labelledby="sec-now">
             <SectionHead id="sec-now" title="now showing" count={unwatched.length > 0 ? `${unwatched.length} unwatched` : null}>
               {watchable.length > 1 && <button className="sec-link" onClick={() => setRoll((n) => n + 1)}>reshuffle</button>}
-              {watchable.length > 8 && <button className="sec-link" onClick={() => setRailAll((v) => !v)}>{railAll ? 'just a few' : `all ${watchable.length}`}</button>}
+              {watchable.length > picksN && <button className="sec-link" onClick={() => setRailAll((v) => !v)}>{railAll ? 'just a few' : `all ${watchable.length}`}</button>}
             </SectionHead>
-            {nowShowing.length === 0 ? (
-              <p className="hint dim">{libLoaded ? 'nothing on the servers yet' : 'checking the shelf'}</p>
+            {libError && nowShowing.length === 0 ? (
+              <div className="case-plaque error" role="alert">
+                <p>couldn't reach the servers</p>
+                <button className="btn more" onClick={retryLibrary}>try again</button>
+              </div>
+            ) : !libLoaded ? (
+              <>
+                <p className="sr-only" role="status">checking the shelf</p>
+                <ul className="cases" aria-hidden="true"><CaseSkeletons n={picksN} /></ul>
+              </>
+            ) : nowShowing.length === 0 ? (
+              <div className="case-plaque empty">
+                <span className="case dark" aria-hidden="true"><span className="case-glass"><span className="case-mat" /></span></span>
+                <p>nothing on the servers yet</p>
+              </div>
             ) : (
-              <ul className="rail">
+              <ul className={'cases' + (railAll ? ' wall' : '')}>
                 {nowShowing.map((r, i) => (
-                  <li key={r.id} className={(i === 0 ? 'lead' : '') + (r.played ? ' watched' : '')}>
-                    <a href={r.play_url || '#'} onClick={(e) => { if (!r.play_url) { e.preventDefault(); setOpen(r) } }} target={r.play_url ? '_blank' : undefined} rel="noreferrer">
-                      {r.poster_url ? <img src={sized(r.poster_url, i === 0 ? 400 : 320)} alt="" width={i === 0 ? 132 : 104} height={i === 0 ? 198 : 156} loading={i < 3 ? 'eager' : 'lazy'} fetchPriority={i === 0 ? 'high' : undefined} decoding="async" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="poster blank" />}
-                      <span className="rail-title">{r.title}{r.played ? <span className="seen"> seen</span> : null}</span>
-                    </a>
+                  <li key={r.id} className={i === 0 ? 'lead' : ''}>
+                    <PosterCase r={r} lead={i === 0} wall={railAll} index={i} onOpen={setOpen} />
                   </li>
                 ))}
               </ul>
@@ -464,7 +471,7 @@ function Feed({ session }) {
               </div>
             </div>
             {shelf.length === 0 ? (
-              <p className="hint dim">{!libLoaded ? 'checking the shelf' : ready.length === 0 ? 'nothing on the servers yet' : 'nothing matches'}</p>
+              <p className="hint dim">{!libLoaded ? 'checking the shelf' : libError && ready.length === 0 ? "couldn't reach the servers" : ready.length === 0 ? 'nothing on the servers yet' : 'nothing matches'}</p>
             ) : (
               <ul className="shelf">
                 {shelf.slice(0, shelfPage * PAGE).map((r) => (

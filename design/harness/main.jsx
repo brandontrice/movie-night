@@ -138,7 +138,21 @@ Object.assign(SCENES, {
   'arrival-toast':   { shot: 'view', run: async () => { await dismissGreeting(); await loaded(); await window.__harness.arrive(); await find(() => q('.reel-toast')); await sleep(600) } },
   'loading':         { shot: 'full', run: async () => { await find(() => byText('.block .hint', 'checking the shelf')) } },
   'empty':           { shot: 'full', run: async () => { await find(() => byText('.block .hint', 'nothing on the servers')) } },
-  'shelf-error':     { shot: 'full', run: async () => { await dismissGreeting().catch(() => {}); await find(() => byText('.block .hint', 'nothing on the servers')) } },
+  'shelf-error':     { shot: 'full', run: async () => { await find(() => byText('.case-plaque.error p', "couldn't reach")) } },
+  // now showing
+  'cases':           { shot: 'full', run: async () => { await find(() => document.querySelectorAll('.case').length > 6 || null); await sleep(800) } },
+  'rail-all':        { shot: 'full', run: async () => { await dismissGreeting(); await click('.sec-link', 'all '); await find(() => q('.cases.wall')); await sleep(600) } },
+  'case-focus':      { shot: 'view', run: async () => { await dismissGreeting(); (await find(() => q('.cases .case'))).focus({ focusVisible: true }); scrollToBlock('now showing'); await sleep(300) } },
+  // the shooter moves the mouse onto the lead case (no click) before it takes the picture
+  'case-hover':      { shot: 'view', run: async () => { await dismissGreeting(); scrollToBlock('now showing'); await sleep(300); const r = (await find(() => q('.cases li.lead .case-glass'))).getBoundingClientRect(); window.__hover = { x: r.left + r.width / 2, y: r.top + r.height / 2 } } },
+  // a poster that fails to load, the lead's among them: the real failure, simulated by pointing two images nowhere
+  'posters-broken':  { shot: 'view', run: async () => {
+    await dismissGreeting()
+    const imgs = await find(() => { const l = document.querySelectorAll('.cases .case-mat img'); return l.length > 3 ? l : null })
+    for (const img of [imgs[0], imgs[2]]) { img.removeAttribute('srcset'); img.src = 'http://127.0.0.1:9/broken.jpg' }
+    await find(() => document.querySelectorAll('.cases .title-card').length >= 2 || null)
+    scrollToBlock('now showing'); await sleep(400)
+  } },
 })
 async function sidebar(expand, y) {
   await dismissGreeting(); await loaded()
@@ -167,7 +181,7 @@ if (!s) throw new Error(`harness: no scene ${scene}`)
 window.__shot = s.shot
 
 await import('../../src/index.css')
-const { default: App } = await import('../../src/App.jsx')
+const { default: App } = scene === 'cases' ? { default: (await import('./cases-preview.jsx')).default } : await import('../../src/App.jsx')
 const { StrictMode, createElement } = await import('react')
 const { createRoot } = await import('react-dom/client')
 createRoot(document.getElementById('root')).render(createElement(StrictMode, null, createElement(App)))

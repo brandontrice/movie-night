@@ -48,7 +48,13 @@ export const SHOTS = [
   ['empty', 'empty', 'rows=empty&shelf=empty', 'brand new: nothing requested, nothing on the servers'],
   ['focus-paper', 'focus-paper', '', 'keyboard focus on paper'],
   ['focus-night', 'focus-night', '', 'keyboard focus on night'],
-  ['shelf-error', 'shelf-error', 'shelf=fail', 'the shelf function failed (there is no error state today)'],
+  ['shelf-error', 'shelf-error', 'shelf=fail', "the shelf function failed: now showing says it couldn't reach the servers, with try again"],
+  ['rail-all', 'rail-all', 'seen=now', '"all 277": a 3-column wall on phones, the lobby wall on desktop'],
+  ['case-hover', 'case-hover', 'seen=now', 'the mouse resting on the lead case (moved there, never clicked)'],
+  ['case-focus', 'case-focus', 'seen=now', 'keyboard focus on the lead case'],
+  ['posters-broken', 'posters-broken', 'seen=now', 'two posters that fail to load, the lead included, become title cards (the failure, simulated)'],
+  ['watched', 'feed-quiet', 'seen=now&watched=some', 'seen cases. STRESS FIXTURE: jellyfin reports nothing as watched today, so every third title is marked watched'],
+  ['cases', 'cases', 'seen=now', 'harness preview: album sleeves, title cards (lead and small), a seen stamp, on real rows'],
   // desktop-only checks: an optional fifth entry overrides the viewports
   ['sidebar-stuck', 'sidebar', 'seen=now', 'desktop, scrolled down: the line fits under the sign, so it sticks', [{ w: 1440, h: 900, scale: 1, mobile: false }, { w: 1366, h: 768, scale: 1, mobile: false }]],
   ['sidebar-full', 'sidebar-full', 'seen=now&line=long', 'desktop, scrolled down, both columns full: too tall to stick, so it scrolls with the page. STRESS FIXTURE: real titles, some forced into the line', [{ w: 1440, h: 900, scale: 1, mobile: false }, { w: 1366, h: 768, scale: 1, mobile: false }]],
@@ -123,6 +129,9 @@ async function shoot([name, scene, extra], vp, { expectBlocked = 0 } = {}) {
   const note = (await send('Runtime.evaluate', { expression: 'window.__note || null', returnByValue: true })).result.value
   if (expectBlocked) ready = ready === 'ok' && blocked.length === expectBlocked ? 'ok' : `error: expected ${expectBlocked} blocked write(s), saw ${blocked.length} (${ready})`
   else if (blocked.length) ready = `error: blocked a write: ${blocked[0]}`
+  // a scene can ask for the mouse to rest somewhere (hover only; a move is not a click)
+  const hover = (await send('Runtime.evaluate', { expression: 'window.__hover || null', returnByValue: true })).result.value
+  if (hover) { await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hover.x, y: hover.y }); await sleep(400) }
   const kind = (await send('Runtime.evaluate', { expression: 'window.__shot', returnByValue: true })).result.value
   if (kind === 'full') {
     const h = (await send('Runtime.evaluate', { expression: 'document.documentElement.scrollHeight', returnByValue: true })).result.value

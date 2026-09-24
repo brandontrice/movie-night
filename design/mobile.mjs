@@ -45,6 +45,10 @@ export const SCENES = [
   ['sheet-movie', 'scene=sheet-movie'],
   ['form-results', 'scene=form-results'],
   ['empty', 'scene=empty&rows=empty&shelf=empty'],
+  ['loading', 'scene=loading&shelf=slow&seen=now'],
+  ['shelf-error', 'scene=shelf-error&shelf=fail&seen=now'],
+  ['rail-all', 'scene=rail-all&seen=now'],
+  ['posters-broken', 'scene=posters-broken&seen=now'],
 ]
 
 // ---- static server for the built harness ----

@@ -396,7 +396,6 @@ main { position: relative; z-index: var(--z-content); max-width: var(--page); ma
 .signin .stub-form input { min-height: var(--tap); }
 .signin .stub-form .primary { min-height: var(--tap); margin-top: var(--sp-1); }
 
-.poster.blank { background: var(--stripes); }
 
 /* a person's lamp: their colour, glowing a little */
 .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--c); box-shadow: 0 0 0 2px rgb(var(--shade-rgb) / 0.25), 0 0 10px 1px var(--c); }
@@ -658,27 +657,184 @@ input:focus { border-color: var(--ink); outline: none; }
 .link.more, .btn.more { min-height: var(--tap); display: inline-flex; align-items: center; }
 .link.more { padding: 0 var(--sp-3); margin-left: calc(-1 * var(--sp-3)); }
 
-/* now showing rail */
-.rail {
-  list-style: none; margin: 0; padding: 4px 0 10px;
-  display: flex; gap: 12px; overflow-x: auto; max-width: 100%; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
+/* ==========================================================================
+   now showing: posters in lit cases. a swipe rail on phones and tablets, a lobby wall on the desktop
+   (a lead case two by two, twelve around it: eight columns, two rows, the full page width)
+   ========================================================================== */
+.cases { list-style: none; margin: 0; padding: 0; }
+.cases > li { min-width: 0; }
+
+/* phones and tablets: a rail that runs to the screen's edges, snapping case by case, the next one peeking in */
+.cases:not(.wall) {
+  display: flex; align-items: flex-start; gap: var(--sp-4);
+  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none;
+  margin: 0 calc(-1 * var(--gutter)); padding: var(--sp-6) var(--gutter) var(--sp-7);
+  scroll-padding-inline: var(--gutter);
 }
-.rail::-webkit-scrollbar { display: none; }
-.rail li { flex: none; width: 104px; scroll-snap-align: start; }
-.rail li.lead { width: 132px; }
-.rail a { display: block; color: var(--stub); text-decoration: none; }
-.rail img, .rail .poster.blank {
-  display: block; width: 100%; aspect-ratio: 2 / 3; height: auto; object-fit: cover; margin: 0;
-  border-radius: 6px; box-shadow: 0 8px 20px rgb(var(--shade-rgb) / 0.45);
-  transition: transform var(--dur-2) ease, box-shadow var(--dur-2) ease;
+.cases:not(.wall)::-webkit-scrollbar { display: none; }
+.cases:not(.wall) > li { flex: none; width: 120px; scroll-snap-align: start; }
+.cases:not(.wall) > li.lead { width: 168px; }
+@media (min-width: 760px) {
+  .cases:not(.wall) > li { width: 128px; }
+  .cases:not(.wall) > li.lead { width: 180px; }
 }
-.rail a:hover img { transform: translateY(-4px) scale(1.02); box-shadow: 0 14px 26px rgb(var(--shade-rgb) / 0.55); }
-.rail-title { display: block; margin-top: 6px; font-size: var(--fs-2); line-height: 1.25; color: var(--stub-edge); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rail li.lead .rail-title { font-size: 14px; color: var(--stub); }
-.rail li.watched img { opacity: 0.55; filter: saturate(0.6); }
-.rail li.watched .rail-title { color: var(--stub-edge); opacity: 0.7; }
-.rail-title .seen { font-size: 11px; letter-spacing: 0.04em; opacity: 0.7; }
+/* "all": a wall. three across on a phone, five on a tablet, the lead taking a two by two corner */
+.cases.wall {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: row dense;
+  gap: var(--sp-6) var(--sp-3); padding: var(--sp-6) 0 var(--sp-4);
+}
+.cases.wall > li.lead { grid-column: span 2; grid-row: span 2; }
+@media (min-width: 760px) { .cases.wall { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--sp-6) var(--sp-4); } }
+/* desktop: always the lobby wall */
+@media (min-width: 1024px) {
+  .cases, .cases:not(.wall), .cases.wall {
+    display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-auto-flow: row dense;
+    gap: var(--sp-6) 20px; overflow: visible; margin: 0; padding: var(--sp-6) 0 var(--sp-5);
+  }
+  .cases > li, .cases:not(.wall) > li, .cases:not(.wall) > li.lead { width: auto; }
+  .cases > li.lead { grid-column: span 2; grid-row: span 2; }
+}
+
+/* the case */
+.case {
+  position: relative; display: flex; flex-direction: column; gap: var(--sp-2); width: 100%;
+  padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; text-decoration: none; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.case:focus-visible { box-shadow: none; outline: none; }
+/* gilt edge, then a black mat, then the poster */
+.case-glass {
+  position: relative; display: block; aspect-ratio: 2 / 3; padding: 1px; border-radius: 5px;
+  background: linear-gradient(160deg, #f1cf73, #8a6a1f 38%, #e9c869 62%, #a37f2a);
+  box-shadow: 0 12px 26px rgb(var(--shade-rgb) / 0.55), 0 2px 4px rgb(var(--shade-rgb) / 0.4);
+  transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) ease;
+  container-type: inline-size;
+}
+.case.album .case-glass { aspect-ratio: 1; margin-right: 12%; }
+.case-mat {
+  position: relative; z-index: 1; display: block; width: 100%; height: 100%; overflow: hidden;
+  border: 3px solid var(--night-900); border-radius: 4px; background: var(--night-800);
+}
+.case-mat img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* the lamp in the top of the case and a faint diagonal of glass */
+.case-glass::after {
+  content: ''; position: absolute; inset: 1px; z-index: 2; border-radius: 4px; pointer-events: none;
+  background:
+    linear-gradient(180deg, rgb(255 236 190 / 0.2), rgb(255 236 190 / 0.04) 22%, transparent 40%),
+    linear-gradient(115deg, transparent 42%, rgb(255 255 255 / 0.06) 50%, transparent 58%);
+  transition: opacity var(--dur-2) ease; opacity: 0.8;
+}
+/* the pool of light the lamp throws on the wall below */
+.case-glass::before {
+  content: ''; position: absolute; left: -8%; right: -8%; top: 100%; height: 26px; z-index: 0; pointer-events: none;
+  background: radial-gradient(50% 100% at 50% 0%, rgb(var(--gold-rgb) / 0.16), transparent 70%);
+  transition: opacity var(--dur-2) ease; opacity: 0.8;
+}
+.case:hover .case-glass, .case:focus-visible .case-glass { transform: translateY(-2px); }
+.case:hover .case-glass::after, .case:focus-visible .case-glass::after,
+.case:hover .case-glass::before, .case:focus-visible .case-glass::before { opacity: 1; }
+.case:hover .case-glass { box-shadow: 0 16px 32px rgb(var(--shade-rgb) / 0.6), 0 0 22px rgb(var(--gold-rgb) / 0.14); }
+.case:focus-visible .case-glass { box-shadow: var(--focus-ring), 0 16px 32px rgb(var(--shade-rgb) / 0.6); }
+
+/* the caption under the case: title, then the year (or the artist) dimmed */
+.case-caption { display: grid; gap: 1px; min-width: 0; padding: 0 1px; }
+.case-title {
+  font-size: var(--fs-2); font-weight: 500; line-height: 1.3; color: var(--paper-300);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; line-clamp: 1; overflow: hidden;
+}
+.case-sub { font-size: var(--fs-1); color: var(--stub-edge); opacity: 0.8; font-variant-numeric: tabular-nums; }
+/* desktop lobby wall: every small caption is the same height (two title lines and the year), so both rows are
+   the same height, and the lead's poster is sized to end exactly where the second row's posters end:
+   row 1's poster + its caption + the row gap + row 2's poster. the column width comes from the lead's own width
+   (two columns and one 20px gap), measured with container units, so it holds at any desktop width. the lead's
+   caption then sits below that edge, level with row 2's captions. its poster is a touch taller than 2:3, so it
+   is cropped a little at the sides (object-fit: cover) */
+@media (min-width: 1024px) {
+  .case-title { -webkit-line-clamp: 2; line-clamp: 2; }
+  .cases { --cap-h: 52px; --case-gap: var(--sp-2); --row-gap: var(--sp-6); }
+  .cases > li.lead { container-type: inline-size; }
+  .cases .case:not(.lead) .case-caption { height: var(--cap-h); overflow: hidden; align-content: start; }
+  .cases .case.lead:not(.album) .case-glass {
+    aspect-ratio: auto;
+    height: calc(1.5 * (100cqw - 20px) + var(--case-gap) + var(--cap-h) + var(--row-gap));
+  }
+}
+
+/* the lead: tonight's feature, a warmer lamp, a plate over it, a two-line title */
+.case.lead .case-title { font-size: var(--fs-3); font-weight: 700; -webkit-line-clamp: 2; line-clamp: 2; }
+.case.lead .case-glass::after {
+  background:
+    linear-gradient(180deg, rgb(255 226 160 / 0.3), rgb(255 226 160 / 0.06) 26%, transparent 46%),
+    linear-gradient(115deg, transparent 42%, rgb(255 255 255 / 0.07) 50%, transparent 58%);
+}
+.case.lead .case-glass::before { height: 40px; background: radial-gradient(50% 100% at 50% 0%, rgb(var(--gold-rgb) / 0.26), transparent 70%); }
+.case.lead .case-glass { box-shadow: 0 18px 40px rgb(var(--shade-rgb) / 0.6), 0 0 34px rgb(var(--gold-rgb) / 0.12); }
+/* the plate hangs above the case, outside its box, so the lead's top lines up with the cases beside it */
+.case-plate {
+  position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; justify-content: center; display: flex; align-items: center; gap: var(--sp-2);
+  font-family: var(--font-display); font-size: var(--fs-3); line-height: 1; color: var(--gold-300);
+  text-shadow: 0 0 12px rgb(var(--gold-rgb) / 0.45);
+}
+.case-plate::before, .case-plate::after { content: ''; width: 18px; height: 1px; background: rgb(var(--gold-rgb) / 0.6); }
+
+/* seen: the poster dims and a stamp lands on the corner */
+.case.watched .case-mat img { opacity: 0.5; filter: saturate(0.55); }
+.case-seen {
+  position: absolute; top: 8px; right: -4px; z-index: 3; transform: rotate(6deg);
+  padding: 1px 6px; border: 2px solid currentColor; border-radius: 3px; background: rgb(var(--night-rgb) / 0.75);
+  color: var(--paper-300); font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+}
+
+/* no poster, or it failed: a title card, set like the sign */
+.title-card {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5em;
+  padding: 10% 9%; text-align: center;
+  background: radial-gradient(120% 80% at 50% 0%, rgb(var(--gold-rgb) / 0.12), transparent 60%), linear-gradient(180deg, var(--night-600), var(--night-900));
+}
+.title-card::before { content: ''; position: absolute; inset: 6px; border: 1px solid rgb(var(--gold-rgb) / 0.45); border-radius: 2px; pointer-events: none; }
+.tc-title {
+  font-family: var(--font-display); color: var(--gold-300); line-height: 1.05; overflow-wrap: anywhere;
+  font-size: clamp(12px, 13cqw, 30px); text-shadow: 0 0 14px rgb(var(--gold-rgb) / 0.35);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; line-clamp: 5; overflow: hidden;
+}
+.tc-year { font-size: clamp(10px, 8cqw, 15px); letter-spacing: 0.12em; color: var(--stub-edge); font-variant-numeric: tabular-nums; }
+
+/* an album: a square sleeve with its record sliding out of the right side */
+.case-record {
+  position: absolute; z-index: 0; top: 5%; left: 20%; width: 90%; aspect-ratio: 1; border-radius: 50%;
+  background:
+    radial-gradient(circle, var(--velvet-500) 0 14%, var(--night-900) 14.5% 16%, transparent 16.5%),
+    conic-gradient(from 20deg, transparent 0 18%, rgb(255 255 255 / 0.14) 24%, transparent 30% 68%, rgb(255 255 255 / 0.1) 74%, transparent 80%),
+    repeating-radial-gradient(circle, #2e2933 0 1.5px, #19151c 1.5px 3px);
+  box-shadow: 0 8px 18px rgb(var(--shade-rgb) / 0.5), 0 0 0 1px rgb(255 255 255 / 0.08);
+}
+
+/* waiting for the shelf: the same cases, lamps down, a slow glint */
+.case.skeleton { cursor: default; }
+.case.skeleton .case-glass { background: rgb(var(--paper-rgb) / 0.12); box-shadow: none; }
+.case.skeleton .case-glass::after { opacity: 0; }
+.case.skeleton .case-glass::before { opacity: 0.25; }
+.case.skeleton .case-mat { background: linear-gradient(100deg, var(--night-800) 30%, var(--night-600) 50%, var(--night-800) 70%) 0 0 / 300% 100%; animation: case-glint 1.8s linear infinite; }
+.case.skeleton .case-title { width: 70%; border-radius: 3px; background: rgb(var(--paper-rgb) / 0.1); }
+.case.skeleton .case-plate { opacity: 0.35; text-shadow: none; }
+@keyframes case-glint { from { background-position: 100% 0; } to { background-position: -50% 0; } }
+
+/* nothing to show, or the servers didn't answer: one dark case and a plaque */
+.case-plaque {
+  display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-6) 0 var(--sp-5);
+  color: var(--stub-edge);
+}
+.case-plaque p { margin: 0; font-size: var(--fs-3); }
+.case-plaque .case.dark { width: 72px; flex: none; cursor: default; }
+.case-plaque .case.dark .case-glass { background: rgb(var(--paper-rgb) / 0.16); box-shadow: 0 10px 22px rgb(var(--shade-rgb) / 0.45); }
+.case-plaque .case.dark .case-glass::after, .case-plaque .case.dark .case-glass::before { opacity: 0; }
+.case-plaque.error { flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); }
+.case-plaque.error p { color: var(--paper-300); }
+.case-plaque.error .btn { color: var(--paper-300); border-color: rgb(var(--paper-rgb) / 0.4); }
+.case-plaque.error .btn:hover { background: var(--paper-300); color: var(--ink); }
+
+/* for screen readers only */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* the line, one column per person */
 .line-cols { display: grid; grid-template-columns: 1fr; gap: 18px; }
@@ -822,7 +978,7 @@ input:focus { border-color: var(--ink); outline: none; }
   .board-glow, .marquee { animation: none; }
   .bulb { animation: none; opacity: 1; box-shadow: 0 0 8px 1px rgb(var(--gold-rgb) / 0.6); }
   .btn.busy, .stub-form.adding { animation: none; opacity: 0.7; }
-  .results.skeleton li { animation: none; }
+  .results.skeleton li, .case.skeleton .case-mat { animation: none; }
   /* entrances: fade in place */
   .stub.tear, .row.tear, .results li, .owned, .reel-toast, .sheet, .sheet-wrap, .toast {
     animation: fade var(--dur-1) ease both;
@@ -832,7 +988,7 @@ input:focus { border-color: var(--ink); outline: none; }
   .stamp.thud::after { display: none; }
   .stamp, .badge { transform: none; }
   /* no movement on hover or press, and the marquee tucks without sliding */
-  .rail a:hover img, .fab:hover, .fab:active, .results button:hover, .reel-toast:hover, .reel-item:hover,
+  .case:hover .case-glass, .case:focus-visible .case-glass, .fab:hover, .fab:active, .results button:hover, .reel-toast:hover, .reel-item:hover,
   .chip:active, .btn:active, .primary:active, .ticketrow.picking { transform: none; }
   .board-face, .board-inner, .marquee, .tagline, .valance, .ticketrow { transition: none; }
   /* the slim sign just fades */
