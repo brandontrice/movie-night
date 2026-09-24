@@ -35,7 +35,16 @@ export const SHOTS = [
   ['sheet-album', 'sheet-album', '', 'detail sheet: an album (no extra details)'],
   ['sheet-request', 'sheet-request', 'as=cate', 'detail sheet: a request still in line'],
   ['sheet-loading', 'sheet-loading', 'as=cate&details=slow', 'detail sheet: details loading'],
-  ['line', 'line', '', 'the line up close, admin buttons at rest (the harness never presses them)'],
+  ['line', 'line', '', "the line, brandon's view: every stub he can act on has a ... button"],
+  ['line-cate', 'line', 'as=cate', "the line, cate's view: ... only on her own stubs"],
+  ['tray-open', 'tray-open', '', 'a tray open under the first stub (opening it is safe; its buttons are never pressed)'],
+  ['line-loading', 'line-loading', 'rows=slow&seen=now', 'the line loading'],
+  ['line-error', 'line-error', 'rows=fail&seen=now', "the line failed to load: couldn't load the line, try again"],
+  ['line-empty', 'line-empty', 'rows=empty&seen=now', 'nothing waiting: the ghost stub (it opens the request form)'],
+  ['stubs', 'stubs', 'seen=now', 'harness preview, real rows: every stub state the harness is never allowed to trigger'],
+  ['tray-last', 'tray-last', 'seen=now&line=long', 'the tray on the last stub of a full sidebar. STRESS FIXTURE. checks both buttons are reachable', [{ w: 1366, h: 768, scale: 1, mobile: false }, { w: 1440, h: 900, scale: 1, mobile: false }]],
+  ['tray-last-collapsed', 'tray-last', 'seen=now&expand=0', 'the real line as it loads, tray opened on its last stub: where it fits it sticks; where the tray tips it over it has to let go and stay reachable', [{ w: 1366, h: 768, scale: 1, mobile: false }, { w: 1440, h: 900, scale: 1, mobile: false }, { w: 1440, h: 820, scale: 1, mobile: false, tag: '1440x820' }, { w: 1680, h: 1050, scale: 1, mobile: false }]],
+  ['tray-last-real', 'tray-last', 'seen=now', 'the tray on the last stub of the real line, every column opened', [{ w: 1366, h: 768, scale: 1, mobile: false }, { w: 1440, h: 900, scale: 1, mobile: false }]],
   ['form-empty', 'form-empty', '', 'request form, fresh'],
   ['form-loading', 'form-loading', 'lookup=slow', 'request form: looking'],
   ['form-results', 'form-results', '', 'request form: results'],
@@ -56,7 +65,7 @@ export const SHOTS = [
   ['watched', 'feed-quiet', 'seen=now&watched=some', 'seen cases. STRESS FIXTURE: jellyfin reports nothing as watched today, so every third title is marked watched'],
   ['cases', 'cases', 'seen=now', 'harness preview: album sleeves, title cards (lead and small), a seen stamp, on real rows'],
   // desktop-only checks: an optional fifth entry overrides the viewports
-  ['sidebar-stuck', 'sidebar', 'seen=now', 'desktop, scrolled down: the line fits under the sign, so it sticks', [{ w: 1440, h: 900, scale: 1, mobile: false }, { w: 1366, h: 768, scale: 1, mobile: false }]],
+  ['sidebar-stuck', 'sidebar', 'seen=now', 'desktop, scrolled down: the line sticks where it fits under the sign, and scrolls with the page where it does not', [{ w: 1440, h: 900, scale: 1, mobile: false }, { w: 1366, h: 768, scale: 1, mobile: false }]],
   ['sidebar-full', 'sidebar-full', 'seen=now&line=long', 'desktop, scrolled down, both columns full: too tall to stick, so it scrolls with the page. STRESS FIXTURE: real titles, some forced into the line', [{ w: 1440, h: 900, scale: 1, mobile: false }, { w: 1366, h: 768, scale: 1, mobile: false }]],
   ['sidebar-full-top', 'sidebar-full-top', 'seen=now&line=long', 'the same, scrolled just into the line: every row is reachable by scrolling. STRESS FIXTURE', [{ w: 1440, h: 900, scale: 1, mobile: false }, { w: 1366, h: 768, scale: 1, mobile: false }]],
   ['sidebar-page', 'sidebar-page', 'seen=now&line=long', 'the whole page with both columns full. STRESS FIXTURE', [{ w: 1366, h: 768, scale: 1, mobile: false }]],
@@ -140,7 +149,7 @@ async function shoot([name, scene, extra], vp, { expectBlocked = 0 } = {}) {
   }
   if (expectBlocked) { page.close(); await fetch(`http://127.0.0.1:${port}/json/close/${t.id}`); return { ready } }
   const { data } = await send('Page.captureScreenshot', { format: 'png' })
-  writeFileSync(join(OUT, `${name}-${vp.w}.png`), Buffer.from(data, 'base64'))
+  writeFileSync(join(OUT, `${name}-${vp.tag ?? vp.w}.png`), Buffer.from(data, 'base64'))
   page.close()
   await fetch(`http://127.0.0.1:${port}/json/close/${t.id}`)
   return { ready, note }
@@ -158,9 +167,9 @@ const notes = {}
 for (const s of list) {
   for (const vp of s[4] ?? WIDTHS) {
     const { ready: r, note } = await shoot(s, vp)
-    if (note) notes[`${s[0]}-${vp.w}`] = note
-    console.log(`${r === 'ok' ? 'ok ' : '!! '} ${s[0]}-${vp.w}${r === 'ok' ? '' : '  ' + r}${note ? '   ' + note : ''}`)
-    if (r !== 'ok') problems.push(`${s[0]}-${vp.w}: ${r}`)
+    if (note) notes[`${s[0]}-${vp.tag ?? vp.w}`] = note
+    console.log(`${r === 'ok' ? 'ok ' : '!! '} ${s[0]}-${vp.tag ?? vp.w}${r === 'ok' ? '' : '  ' + r}${note ? '   ' + note : ''}`)
+    if (r !== 'ok') problems.push(`${s[0]}-${vp.tag ?? vp.w}: ${r}`)
   }
 }
 
@@ -169,9 +178,9 @@ const notesFile = join(OUT, 'notes.json')
 const allNotes = { ...(existsSync(notesFile) ? JSON.parse(readFileSync(notesFile, 'utf8')) : {}), ...notes }
 writeFileSync(notesFile, JSON.stringify(allNotes, null, 1))
 const rows = SHOTS.map(([n, , , note, vps]) => {
-  const shot = (vps ?? WIDTHS).filter((v) => existsSync(join(OUT, `${n}-${v.w}.png`)))
+  const shot = (vps ?? WIDTHS).filter((v) => existsSync(join(OUT, `${n}-${v.tag ?? v.w}.png`)))
   if (!shot.length) return ''
-  const figs = shot.map((v) => `<figure><img src="${n}-${v.w}.png" width="${v.w === 390 ? 390 : 960}" loading="lazy"><figcaption>${v.w}x${v.h}${allNotes[`${n}-${v.w}`] ? ': ' + allNotes[`${n}-${v.w}`] : ''}</figcaption></figure>`).join('')
+  const figs = shot.map((v) => `<figure><img src="${n}-${v.tag ?? v.w}.png" width="${v.w === 390 ? 390 : 960}" loading="lazy"><figcaption>${v.w}x${v.h}${allNotes[`${n}-${v.tag ?? v.w}`] ? ': ' + allNotes[`${n}-${v.tag ?? v.w}`] : ''}</figcaption></figure>`).join('')
   return `<section><h2>${n}</h2><p>${note}</p><div class="pair">${figs}</div></section>`
 }).join('\n')
 writeFileSync(join(OUT, 'index.html'), `<!doctype html><meta charset="utf-8"><title>movie night: ${label}</title>

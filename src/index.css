@@ -843,7 +843,130 @@ input:focus { border-color: var(--ink); outline: none; }
 .h.sub { font-size: 14px; margin-bottom: 8px; }
 .h.sub .dot { width: 9px; height: 9px; }
 .line-col > .link { color: var(--stub-edge); }
-.line, .shelf { list-style: none; margin: 0; padding: 0; background: var(--stub); color: var(--ink); border-radius: var(--radius); box-shadow: var(--shadow-1); overflow: hidden; }
+/* ==========================================================================
+   the line: each request a ticket stub, each person's column a box-office window.
+   a stub is one line on every screen: the main part (poster, title, meta) and, past a perforation with punched
+   notches, a 56px stub end. every action lives in a tray that tears open under the stub
+   ========================================================================== */
+.line { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+/* no shadow: paper already stands out on the dark room, and any shadow pools in the punched notches and turns
+   them into dark blobs instead of holes you can see the room through */
+.stub-row { position: relative; }
+.ticket-stub {
+  --end: 56px;
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) var(--end); min-height: 64px;
+  background: var(--stub); color: var(--ink); border-radius: var(--r-2);
+  /* the notches, top and bottom of the perforation */
+  -webkit-mask: radial-gradient(circle 5px at calc(100% - var(--end)) 0, #0000 98%, #000) top / 100% 51% no-repeat,
+                radial-gradient(circle 5px at calc(100% - var(--end)) 100%, #0000 98%, #000) bottom / 100% 51% no-repeat;
+  mask: radial-gradient(circle 5px at calc(100% - var(--end)) 0, #0000 98%, #000) top / 100% 51% no-repeat,
+        radial-gradient(circle 5px at calc(100% - var(--end)) 100%, #0000 98%, #000) bottom / 100% 51% no-repeat;
+}
+.stub-main {
+  display: flex; align-items: center; gap: var(--sp-3); min-width: 0; min-height: 64px;
+  padding: 2px var(--sp-3) 2px 10px;  /* 60px thumb + 4px = the 64px stub */
+  border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer;
+  border-radius: var(--r-2) 0 0 var(--r-2); transition: background var(--dur-1);
+}
+.stub-main:hover { background: var(--paper-100); }
+.stub-main:focus-visible { box-shadow: inset 0 0 0 2px var(--night-800), inset 0 0 0 4px var(--gold-300); }
+.stub-thumb {
+  flex: none; display: grid; place-items: center; width: 40px; height: 60px; border-radius: 3px; overflow: hidden;
+  background: var(--paper-500);
+}
+.stub-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ticket-stub.album .stub-thumb img { height: 40px; box-shadow: 0 2px 4px rgb(var(--shade-rgb) / 0.3); }
+.ticket-stub.album .stub-thumb { background: var(--night-800); }
+.stub-thumb-blank { width: 100%; height: 100%; background: var(--stripes); }
+.stub-text { display: grid; gap: 2px; min-width: 0; }
+.stub-title { font-weight: 700; font-size: var(--fs-3); line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stub-meta { font-size: var(--fs-2); color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.stub-meta em { font-style: italic; }
+@media (min-width: 520px) { .stub-title { font-size: var(--fs-4); } }
+
+/* past the perforation */
+.stub-end {
+  display: grid; place-items: center; min-height: 64px;
+  background-image: repeating-linear-gradient(180deg, var(--paper-500) 0 5px, transparent 5px 10px);
+  background-size: 1.5px 100%; background-repeat: no-repeat; background-position: left top;
+}
+.stub-admit {
+  writing-mode: vertical-rl; transform: rotate(180deg);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-soft);
+}
+.stub-more {
+  display: grid; place-items: center; width: var(--tap); height: var(--tap); padding: 0;
+  border: 0; border-radius: var(--r-2); background: none; color: var(--ink); cursor: pointer;
+  transition: background var(--dur-1), color var(--dur-1);
+}
+.stub-more:hover { background: var(--paper-400); }
+.stub-more[aria-expanded='true'] { background: var(--ink); color: var(--stub); }
+.stub-dots {
+  width: 24px; height: 4px;  /* three 8px tiles, three whole dots */
+  background: radial-gradient(circle, currentColor 2px, transparent 2.5px) 0 0 / 8px 4px repeat-x;
+}
+
+/* scanning: a thin beam sweeps along the stub's top edge */
+.stub-beam {
+  position: absolute; top: 0; left: 0; right: var(--end); height: 3px; overflow: hidden; border-radius: var(--r-2) 0 0 0;
+}
+.stub-beam::after {
+  content: ''; position: absolute; top: 0; bottom: 0; width: 40%;
+  background: linear-gradient(90deg, transparent, var(--gold-300), transparent);
+  animation: beam-sweep 1.3s ease-in-out infinite;
+}
+@keyframes beam-sweep { from { left: -40%; } to { left: 100%; } }
+
+/* stamps on a stub: grabbing (old rows), and "on the shelf" as it leaves */
+.stub-stamp { position: absolute; top: 50%; right: calc(var(--end) + 10px); margin-top: -13px; background: rgb(var(--paper-rgb) / 0.92); }
+
+/* the tray, torn open under the stub */
+.stub-tray {
+  position: relative; display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: -4px; padding: 14px var(--sp-3) var(--sp-3);
+  background: var(--paper-200); color: var(--ink); border-radius: 0 0 var(--r-2) var(--r-2);
+  background-image: repeating-linear-gradient(90deg, var(--paper-500) 0 5px, transparent 5px 10px);
+  background-size: 100% 1.5px; background-repeat: no-repeat; background-position: 0 4px;
+  animation: tray-open var(--dur-2) var(--ease-out) both;
+  scroll-margin: 110px 0 104px;  /* keep clear of the slim sign above and the request button below */
+}
+@keyframes tray-open { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+.tray-note { flex-basis: 100%; margin: 0 0 2px; font-size: var(--fs-3); line-height: 1.35; color: var(--ink); }
+.tray-btn { flex: 1 1 auto; min-height: var(--tap); padding: 0 var(--sp-4); font-weight: 700; }
+.tray-btn.ink { background: var(--ink); color: var(--stub); border-color: var(--ink); }
+.tray-btn.ink:hover { background: #3a302a; }
+.tray-btn.ink:disabled { opacity: 1; cursor: progress; background: #4a4038; border-color: #4a4038; }
+.tray-btn.quiet { background: transparent; color: var(--ink); border-color: rgb(43 36 32 / 0.35); font-weight: 500; }
+.tray-btn.quiet:hover { border-color: var(--ink); background: transparent; color: var(--ink); }
+.tray-btn.quiet:disabled { opacity: 0.45; cursor: default; }
+.tray-btn.danger { background: var(--curtain); color: var(--on-velvet); border-color: var(--curtain); }
+.tray-btn.danger:hover { background: var(--curtain-hover); }
+
+/* leaving: imported gets its stamp, then folds; taken off tears away */
+.stub-row.leaving-shelf { animation: stub-fold 0.45s 0.8s var(--ease-out) both; }
+.stub-row.leaving-pulled { animation: stub-tear-away 0.5s var(--ease-out) both; }
+@keyframes stub-fold { to { opacity: 0; max-height: 0; margin-bottom: calc(-1 * var(--sp-2)); transform: scaleY(0.6); } }
+@keyframes stub-tear-away { 60% { opacity: 0.4; transform: translateX(36px) rotate(2.5deg); } to { opacity: 0; transform: translateX(60px) rotate(4deg); max-height: 0; margin-bottom: calc(-1 * var(--sp-2)); } }
+.stub-row.leaving-shelf, .stub-row.leaving-pulled { max-height: 200px; pointer-events: none; }
+
+/* loading: blank stubs */
+.stub-row.skeleton .ticket-stub { background: rgb(var(--paper-rgb) / 0.12); }
+.stub-row.skeleton .stub-main { cursor: default; }
+.stub-row.skeleton .stub-thumb { background: rgb(var(--paper-rgb) / 0.1); }
+.stub-row.skeleton .stub-title, .stub-row.skeleton .stub-meta { border-radius: 3px; background: rgb(var(--paper-rgb) / 0.1); }
+.stub-row.skeleton .stub-title { width: 70%; }
+.stub-row.skeleton .stub-meta { width: 45%; }
+.stub-row.skeleton .stub-end { background-image: none; }
+
+/* nothing waiting: a dashed ghost stub that opens the request form */
+.ghost-stub {
+  display: flex; align-items: center; width: 100%; min-height: 64px; padding: 0 var(--sp-4);
+  border: 1.5px dashed rgb(var(--paper-rgb) / 0.35); border-radius: var(--r-2); background: none;
+  color: var(--stub-edge); font: inherit; font-size: var(--fs-3); text-align: left; cursor: pointer;
+  transition: border-color var(--dur-1), color var(--dur-1);
+}
+.ghost-stub:hover { border-color: var(--bulb); color: var(--paper-300); }
+
+.shelf { list-style: none; margin: 0; padding: 0; background: var(--stub); color: var(--ink); border-radius: var(--radius); box-shadow: var(--shadow-1); overflow: hidden; }
 .row {
   display: flex; align-items: center; gap: 10px; padding: 11px 14px;
   border-bottom: 1px dashed var(--stub-edge); cursor: pointer; min-width: 0;
@@ -979,6 +1102,10 @@ input:focus { border-color: var(--ink); outline: none; }
   .bulb { animation: none; opacity: 1; box-shadow: 0 0 8px 1px rgb(var(--gold-rgb) / 0.6); }
   .btn.busy, .stub-form.adding { animation: none; opacity: 0.7; }
   .results.skeleton li, .case.skeleton .case-mat { animation: none; }
+  /* the scan beam holds still as a dotted line; trays and leaving stubs just fade */
+  .stub-beam::after { animation: none; left: 0; width: 100%; background: repeating-linear-gradient(90deg, var(--gold-300) 0 4px, transparent 4px 9px); }
+  .stub-tray { animation: fade var(--dur-1) ease both; }
+  .stub-row.leaving-shelf, .stub-row.leaving-pulled { animation: fade var(--dur-1) ease reverse both; }
   /* entrances: fade in place */
   .stub.tear, .row.tear, .results li, .owned, .reel-toast, .sheet, .sheet-wrap, .toast {
     animation: fade var(--dur-1) ease both;
@@ -998,4 +1125,14 @@ input:focus { border-color: var(--ink); outline: none; }
   .ticket-no.fresh { animation: none; }
   /* safety net for anything added later without its own rule */
   *, *::before, *::after { animation-iteration-count: 1 !important; }
+}
+
+/* the desktop sidebar's stubs run a little slimmer (56px, pointer not thumb; the "..." target stays 48px), so the
+   real line still fits under the slim sign and stays put at common laptop heights */
+@media (min-width: 1024px) {
+  .line { gap: 6px; }
+  .ticket-stub, .stub-main, .stub-end { min-height: 56px; }
+  .stub-main { padding-top: 1px; padding-bottom: 1px; }
+  .stub-thumb { width: 36px; height: 54px; }
+  .ticket-stub.album .stub-thumb img { height: 36px; }
 }

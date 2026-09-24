@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { art, sized } from './lib/images'
 import PosterCase, { CaseSkeletons } from './PosterCase'
+import LineStub, { StubSkeletons } from './LineStub'
 import { useMedia } from './lib/useMedia'
 
 const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || '').toLowerCase()
@@ -220,6 +221,7 @@ function Feed({ session }) {
   const [libLoaded, setLibLoaded] = useState(false)
   const [libError, setLibError] = useState(false)
   const [rowsLoaded, setRowsLoaded] = useState(false)
+  const [rowsError, setRowsError] = useState(false)
   const detailCache = useRef({})
   const seen = useRef(null)
   const prevStatus = useRef({})
@@ -229,6 +231,8 @@ function Feed({ session }) {
       supabase.from('media_requests').select('*').order('created_at', { ascending: false }),
       supabase.from('media_events').select('*').order('at'),
     ])
+    if (r.error) { setRowsError(true); setRowsLoaded(true); return }
+    setRowsError(false)
     const list = r.data || []
     if (seen.current === null) seen.current = new Set(list.map((x) => x.id))
     const changed = {}
@@ -323,14 +327,20 @@ function Feed({ session }) {
   // pulling a ticket: only while it's still just requested, only your own (brandon can pull any)
   const [pulling, setPulling] = useState({})
   const canPull = (r) => r.status === 'requested' && (isAdmin || r.requested_by === session.user.id)
-  function askPull(id) {
-    setPulling((p) => ({ ...p, [id]: true }))
-    setTimeout(() => setPulling((p) => { const n = { ...p }; delete n[id]; return n }), 3500)
-  }
+  const drop = (id) => (m) => { const n = { ...m }; delete n[id]; return n }
+  // asking is a real question now: it waits for "sure?" or "keep it", no timer taking the choice away
+  function askPull(id) { setPulling((p) => ({ ...p, [id]: true })) }
+  function keepPull(id) { setPulling(drop(id)) }
   async function pull(id) {
-    setPulling((p) => { const n = { ...p }; delete n[id]; return n })
+    setPulling(drop(id))
     setOpen((o) => (o?.id === id ? null : o))
     await supabase.from('media_requests').delete().eq('id', id)
+  }
+  // the tray under a stub: one open at a time; closing it clears whatever it was saying
+  const [tray, setTray] = useState(null)
+  function toggleTray(id) {
+    setTray((t) => (t === id ? null : id))
+    setPulling({}); setMissed((m) => (tray === id ? drop(id)(m) : m))
   }
   // "imported": scan, then only close the request if the item is really there. otherwise say so and leave it in line.
   const [missed, setMissed] = useState({})
@@ -338,10 +348,8 @@ function Feed({ session }) {
     setScanning((s) => ({ ...s, [id]: true }))
     const { data, error } = await supabase.functions.invoke('library-scan', { body: { id } })
     setScanning((s) => ({ ...s, [id]: false }))
-    if (error || !data?.found) {
-      setMissed((m) => ({ ...m, [id]: true }))
-      setTimeout(() => setMissed((m) => { const n = { ...m }; delete n[id]; return n }), 4000)
-    }
+    // stays until the tray (or the sheet) closes, so it can actually be read
+    if (error || !data?.found) setMissed((m) => ({ ...m, [id]: true }))
   }
   function openForm() { setAdding(true) }
 
@@ -350,11 +358,27 @@ function Feed({ session }) {
   // only brandon imports, so credit him: his own id when he's the one looking, otherwise whoever the last import was credited to.
   const adder = isAdmin ? session.user.id : [...events].reverse().find((ev) => ev.event === 'imported')?.actor || null
   const arrivals = useArrivals(events, rows, ready, adder)
+  const [leaving, setLeaving] = useState({})
+  const prevPending = useRef(null)
+  useEffect(() => {
+    const now = new Set(pending.map((r) => r.id))
+    const before = prevPending.current
+    prevPending.current = new Map(pending.map((r) => [r.id, r]))
+    if (!before) return
+    const gone = [...before.values()].filter((r) => !now.has(r.id))
+    if (!gone.length) return
+    const why = (r) => (rows.some((x) => x.id === r.id && x.status === 'imported') ? 'shelf' : 'pulled')
+    setLeaving((l) => { const n = { ...l }; for (const r of gone) n[r.id] = { ...r, leaving: why(r) }; return n })
+    setTray((t) => (gone.some((r) => r.id === t) ? null : t))
+    const t = setTimeout(() => setLeaving((l) => { const n = { ...l }; for (const r of gone) delete n[r.id]; return n }), 1400)
+    return () => clearTimeout(t)
+  }, [pending, rows])
   const lineCols = useMemo(() => {
     const by = {}
-    for (const r of pending) (by[r.requested_by] ||= []).push(r)
+    const all = [...pending, ...Object.values(leaving)].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    for (const r of all) (by[r.requested_by] ||= []).push(r)
     return Object.keys(by).sort((a, b) => (a === adder) - (b === adder)).map((uid) => ({ uid, rows: by[uid] }))
-  }, [pending, adder])
+  }, [pending, leaving, adder])
   // the mark you last left. frozen for this visit so the shelf stays lit while you look; advanced when you dismiss the greeting
   const seenAtMount = useRef(store.get(SEEN_KEY) || '')
   const isFresh = (a) => !seenAtMount.current || a.at > seenAtMount.current
@@ -426,26 +450,41 @@ function Feed({ session }) {
           {/* the line */}
           <section className={'block line-block' + (lineSticks ? ' stick' : '')} aria-labelledby="sec-line" ref={lineRef}>
             <SectionHead id="sec-line" title="the line" count={pending.length} />
-            {pending.length === 0 ? (
-              <p className="hint dim">nothing waiting. ask for something.</p>
+            {rowsError && pending.length === 0 ? (
+              <div className="case-plaque error" role="alert">
+                <p>couldn't load the line</p>
+                <button className="btn more" onClick={load}>try again</button>
+              </div>
+            ) : !rowsLoaded ? (
+              <>
+                <p className="sr-only" role="status">loading the line</p>
+                <ul className="line" aria-hidden="true"><StubSkeletons n={3} /></ul>
+              </>
+            ) : lineCols.length === 0 ? (
+              <button type="button" className="ghost-stub" onClick={openForm}>
+                <span>nothing waiting. ask for something.</span>
+              </button>
             ) : (
               <div className="line-cols">
                 {lineCols.map(({ uid, rows: list }) => {
                   const all = !!lineAll[uid]
                   const p = profiles[uid]
+                  const waiting = list.filter((r) => !r.leaving).length
                   return (
                     <div key={uid} className="line-col">
                       <h3 className="h sub">
                         <span className="dot" style={{ '--c': p?.color || '#999' }} />
                         {uid === session.user.id ? 'yours' : `${who(uid)}'s`}
-                        <span className="count">{list.length}</span>
+                        <span className="count">{waiting}</span>
                       </h3>
                       <ul className="line">
                         {(all ? list : list.slice(0, 5)).map((r) => (
-                          <LineRow
-                            key={r.id} r={r} isNew={newIds.has(r.id)} thud={!!thud[r.id]} isAdmin={isAdmin}
-                            scanning={!!scanning[r.id]} missed={!!missed[r.id]} canPull={canPull(r)} pulling={!!pulling[r.id]}
-                            onOpen={setOpen} onImported={markImported} onAskPull={askPull} onPull={pull}
+                          <LineStub
+                            key={r.id} r={r} isNew={newIds.has(r.id)} thud={!!thud[r.id]} leaving={r.leaving || null}
+                            canImport={isAdmin && r.status !== 'imported'} canPull={canPull(r)}
+                            trayOpen={tray === r.id} scanning={!!scanning[r.id]} missed={!!missed[r.id]} pulling={!!pulling[r.id]}
+                            onOpen={setOpen} onToggleTray={() => toggleTray(r.id)} onImported={() => markImported(r.id)}
+                            onAskPull={() => askPull(r.id)} onKeep={() => keepPull(r.id)} onPull={() => pull(r.id)}
                           />
                         ))}
                       </ul>
@@ -514,8 +553,9 @@ function Feed({ session }) {
           canPull={canPull(openRow)}
           pulling={!!pulling[openRow.id]}
           onAskPull={() => askPull(openRow.id)}
+          onKeep={() => keepPull(openRow.id)}
           onPull={() => pull(openRow.id)}
-          onClose={() => setOpen(null)}
+          onClose={() => { setOpen(null); setPulling({}); setMissed(drop(openRow.id)) }}
         />
       )}
 
@@ -523,26 +563,6 @@ function Feed({ session }) {
         <button className="link more" onClick={() => supabase.auth.signOut()}>sign out</button>
       </footer>
     </main>
-  )
-}
-
-// one ticket in the line. it lives out here, not inside Feed, so it keeps its identity between renders:
-// no remount on every realtime reload, no replayed tear, and a button you're focused on stays put.
-function LineRow({ r, isNew, thud, isAdmin, scanning, missed, canPull, pulling, onOpen, onImported, onAskPull, onPull }) {
-  return (
-    <li className={'row ' + r.status + (isNew ? ' tear' : '')} onClick={(e) => { if (!e.target.closest('a,button')) onOpen(r) }}>
-      <span className="row-title">{r.title}{r.year ? <span className="year"> {r.year}</span> : null}{r.artist ? <span className="year"> · {r.artist}</span> : null}</span>
-      <span className="row-when">{timeAgo(r.created_at)}</span>
-      {r.status === 'grabbed' && <span className={'badge grabbed' + (thud ? ' thud' : '')}>grabbing</span>}
-      {(isAdmin || canPull) && (
-        <span className="row-actions">
-          {isAdmin && <button className={'btn tiny' + (scanning ? ' busy' : '') + (missed ? ' missed' : '')} disabled={scanning} onClick={() => onImported(r.id)}>{scanning ? 'scanning' : missed ? 'not on the shelf yet' : 'imported'}</button>}
-          {canPull && (pulling
-            ? <button className="btn tiny pull sure" onClick={() => onPull(r.id)}>sure?</button>
-            : <button className="link tiny pull" onClick={() => onAskPull(r.id)}>nevermind</button>)}
-        </span>
-      )}
-    </li>
   )
 }
 
@@ -713,7 +733,7 @@ function Greeting({ arrivals, isFresh, loaded, who, profiles, me, onOpen }) {
   )
 }
 
-function Sheet({ row, trail, who, cache, isAdmin, scanning, missed, onImported, canPull, pulling, onAskPull, onPull, onClose }) {
+function Sheet({ row, trail, who, cache, isAdmin, scanning, missed, onImported, canPull, pulling, onAskPull, onKeep, onPull, onClose }) {
   const [d, setD] = useState(cache.current[row.id] ?? null)
   const [failed, setFailed] = useState(false)
 
@@ -798,7 +818,7 @@ function Sheet({ row, trail, who, cache, isAdmin, scanning, missed, onImported, 
               <span className={'stamp ' + row.status}>{row.status === 'grabbed' ? 'grabbing it' : 'on the list'}</span>
             )}
             {canPull && (pulling
-              ? <button className="btn pull sure" onClick={onPull}>sure? take it off the list</button>
+              ? <><button className="btn pull sure" onClick={onPull}>sure? take it off the list</button><button className="link pull" onClick={onKeep}>keep it</button></>
               : <button className="link pull" onClick={onAskPull}>nevermind</button>)}
           </div>
         </div>

@@ -35,7 +35,9 @@ else localStorage.setItem(SEEN_KEY, new RealDate(NOW - (seen === 'now' ? 0 : par
 const FORBIDDEN = /\b(nevermind|sure\?|take it off|imported|sign out|delete|withdraw|remove)\b/i
 const forbidden = (el) => {
   const b = el?.closest?.('button, a, [role="button"]')
-  return !!b && (FORBIDDEN.test(b.textContent) || b.matches('.pull, .foot *'))
+  if (!b) return false
+  if (b.closest('.stub-tray')) return !/keep it/i.test(b.textContent)
+  return FORBIDDEN.test(b.textContent) || b.matches('.pull, .foot *')
 }
 let violation = null
 document.addEventListener('click', (e) => {
@@ -70,7 +72,7 @@ async function type(sel, value) {
 // loaded means the shelf has answered: its list, or a final hint (not "checking the shelf")
 const loaded = async () => {
   await find(() => q('.shelf') || byText('.shelf-block .hint', 'nothing'))
-  await find(() => q('.line .row') || byText('.line-block .hint', 'nothing waiting'))
+  await find(() => q('.line .stub-row:not(.skeleton)') || q('.ghost-stub') || q('.line-block .case-plaque'))
 }
 // the greeting only shows when something landed since the last visit; dismiss it if it's there
 const dismissGreeting = async () => {
@@ -94,17 +96,18 @@ Object.assign(SCENES, {
   'greeting':        { shot: 'view', run: async () => { await find(() => q('.greet')) } },
   'sheet-movie':     { shot: 'view', run: async () => { await dismissGreeting(); await click('.shelf .row', firstOf('movie').title); await find(() => q('.sheet-overview')); await sleep(600) } },
   'sheet-album':     { shot: 'view', run: async () => { await dismissGreeting(); await shelfFilter('albums'); await click('.shelf .row', firstOf('album').title); await find(() => q('.sheet .hint, .sheet .tracks')) } },
-  'sheet-request':   { shot: 'view', run: async () => { await dismissGreeting(); await click('.line .row', lineReq.title); await find(() => q('.sheet-overview, .sheet .hint')); await sleep(600) } },
-  'sheet-loading':   { shot: 'view', run: async () => { await dismissGreeting(); await click('.line .row', lineReq.title); await find(() => q('.sheet .skeleton')) } },
+  'sheet-request':   { shot: 'view', run: async () => { await dismissGreeting(); await click('.line .stub-main', lineReq.title); await find(() => q('.sheet-overview, .sheet .hint')); await sleep(600) } },
+  'sheet-loading':   { shot: 'view', run: async () => { await dismissGreeting(); await click('.line .stub-main', lineReq.title); await find(() => q('.sheet .skeleton')) } },
   // run by shoot.mjs before every set: each guard has to stop a forbidden action or nothing gets shot
   'selftest':        { shot: 'view', run: async () => {
     await dismissGreeting(); await loaded()
     let refused = false
-    try { await click('.line .pull', 'nevermind') } catch { refused = true }
+    await click('.line .stub-more'); await find(() => q('.stub-tray'))
+    try { await click('.stub-tray button', 'nevermind') } catch { refused = true }
     if (!refused) throw new Error('selftest: driver clicked nevermind')
-    byText('.line .pull', 'nevermind').click()                 // straight past the driver: the listener must eat it
+    byText('.stub-tray button', 'nevermind').click()           // straight past the driver: the listener must eat it
     await sleep(100)
-    if (!violation || byText('.line .pull', 'sure?')) throw new Error('selftest: click listener let nevermind through')
+    if (!violation || byText('.stub-tray button', 'sure?')) throw new Error('selftest: click listener let nevermind through')
     violation = null
     const { supabase } = await import('./mock-supabase.js')
     for (const f of [() => supabase.from('media_requests').delete(), () => supabase.from('media_requests').update({}), () => supabase.auth.signOut()]) {
@@ -126,6 +129,36 @@ Object.assign(SCENES, {
   'sidebar-page':    { shot: 'full', run: () => sidebar(true, 0) },
   // the house lights, caught partway through the dim
   'lights':          { shot: 'view', settle: 0, run: async () => { await find(() => q('.room.house-lights')); await sleep(450) } },
+  // the line. "..." only opens a tray and "see all" only shows more rows, so both are safe to press
+  'tray-open':       { shot: 'view', run: async () => { await dismissGreeting(); await click('.line .stub-more'); await find(() => q('.stub-tray')); scrollToBlock('the line'); await sleep(500) } },
+  'line-loading':    { shot: 'view', run: async () => { await find(() => q('.line .stub-row.skeleton')); scrollToBlock('the line'); await sleep(300) } },
+  'line-error':      { shot: 'view', run: async () => { await find(() => byText('.line-block .case-plaque p', "couldn't load")); scrollToBlock('the line'); await sleep(300) } },
+  'line-empty':      { shot: 'view', run: async () => { await find(() => q('.ghost-stub')); scrollToBlock('the line'); await sleep(300) } },
+  // the desktop sidebar with both columns full: open the tray on its very last stub and prove both buttons
+  // can be reached (on screen, and not under the slim sign or the request button), and a stuck sidebar still fits
+  'tray-last':       { shot: 'view', run: async () => {
+    await dismissGreeting(); await loaded()
+    const seeAll = () => [...document.querySelectorAll('.line-col .link.more')].filter((b) => /see all/.test(b.textContent)).length
+    while (P.get('expand') !== '0' && seeAll()) { const n = seeAll(); await click('.line-col .link.more', 'see all'); await find(() => seeAll() < n || null) }
+    await sleep(400) // let the resize observer settle after "see all" before sampling
+    const stuckBefore = getComputedStyle(q('.line-block')).position === 'sticky'
+    const mores = [...document.querySelectorAll('.line .stub-more')]
+    const last = mores[mores.length - 1]
+    last.scrollIntoView({ block: 'center' }); await sleep(500)
+    last.click(); await find(() => q('.stub-tray')); await sleep(1100)
+    const sec = q('.line-block')
+    const stuck = getComputedStyle(sec).position === 'sticky'
+    if (stuck && sec.getBoundingClientRect().bottom > innerHeight - 88 + 1) throw new Error('sidebar is still sticky with the tray open, and cut off')
+    const buttons = [...document.querySelectorAll('.stub-tray button')]
+    if (buttons.length < 2) throw new Error('tray has fewer than two buttons')
+    for (const b of buttons) {
+      const r = b.getBoundingClientRect()
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      if (r.top < 0 || r.bottom > innerHeight || !(hit === b || b.contains(hit))) throw new Error(`tray button "${b.textContent}" is not reachable (${Math.round(r.top)}..${Math.round(r.bottom)} in ${innerHeight}, under ${hit?.className})`)
+    }
+    window.__note = `sidebar ${stuckBefore ? 'stuck' : 'scrolling'} before, ${stuck ? 'stuck' : 'scrolling'} with the tray open (${Math.round(sec.getBoundingClientRect().height)}px tall, viewport ${innerHeight}px); both tray buttons on screen and uncovered`
+  } },
+  'stubs':           { shot: 'full', run: async () => { await find(() => document.querySelectorAll('.stub-row').length > 8 || null); await sleep(600) } },
   'line':        { shot: 'view', run: async () => { await dismissGreeting(); await loaded(); scrollToBlock('the line'); await sleep(300) } },
   'form-empty':      { shot: 'view', run: async () => { await dismissGreeting(); await click('.fab'); scrollTo(0, 0) } },
   'form-results':    { shot: 'view', run: async () => { await dismissGreeting(); await click('.fab'); await type('.stub-form input', 'the notebook'); await find(() => q('.results:not(.skeleton) li')); await sleep(700) } },
@@ -181,7 +214,7 @@ if (!s) throw new Error(`harness: no scene ${scene}`)
 window.__shot = s.shot
 
 await import('../../src/index.css')
-const { default: App } = scene === 'cases' ? { default: (await import('./cases-preview.jsx')).default } : await import('../../src/App.jsx')
+const { default: App } = scene === 'cases' ? await import('./cases-preview.jsx') : scene === 'stubs' ? await import('./stubs-preview.jsx') : await import('../../src/App.jsx')
 const { StrictMode, createElement } = await import('react')
 const { createRoot } = await import('react-dom/client')
 createRoot(document.getElementById('root')).render(createElement(StrictMode, null, createElement(App)))

@@ -5,7 +5,7 @@ import data from '../fixture/data.json'
 const P = new URLSearchParams(location.search)
 const who = P.get('as') || 'brandon'            // brandon | cate | out
 const shelfMode = P.get('shelf') || 'ok'        // ok | slow | fail | empty
-const rowsMode = P.get('rows') || 'ok'          // ok | empty
+const rowsMode = P.get('rows') || 'ok'          // ok | empty | slow | fail
 const detailsMode = P.get('details') || 'ok'    // ok | slow | fail
 const lookupMode = P.get('lookup') || 'ok'      // ok | slow
 
@@ -48,7 +48,12 @@ function query(table) {
   const q = {
     select: () => q, order: () => q, eq: () => q,
     insert: () => later({ error: null }), update: () => readOnly(`update on ${table}`), delete: () => readOnly(`delete on ${table}`),
-    then: (res, rej) => later({ data: tables[table] ?? [], error: null }).then(res, rej),
+    then: (res, rej) => {
+      // rows=slow never answers and rows=fail errors, for the line's loading and error states (profiles still load)
+      if (table !== 'profiles' && rowsMode === 'slow') return new Promise(() => {})
+      if (table !== 'profiles' && rowsMode === 'fail') return later({ data: null, error: { message: 'harness: rows=fail' } }).then(res, rej)
+      return later({ data: tables[table] ?? [], error: null }).then(res, rej)
+    },
   }
   return q
 }

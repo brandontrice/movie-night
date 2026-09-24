@@ -49,6 +49,13 @@ export const SCENES = [
   ['shelf-error', 'scene=shelf-error&shelf=fail&seen=now'],
   ['rail-all', 'scene=rail-all&seen=now'],
   ['posters-broken', 'scene=posters-broken&seen=now'],
+  ['line', 'scene=line'],
+  ['line-cate', 'scene=line&as=cate'],
+  ['tray-open', 'scene=tray-open'],
+  ['line-loading', 'scene=line-loading&rows=slow&seen=now'],
+  ['line-error', 'scene=line-error&rows=fail&seen=now'],
+  ['line-empty', 'scene=line-empty&rows=empty&seen=now'],
+  ['stubs', 'scene=stubs&seen=now'],
 ]
 
 // ---- static server for the built harness ----
@@ -160,6 +167,17 @@ for (const profile of PROFILES) {
       if (m.scrollWidth > m.innerWidth) fail(`page is ${m.scrollWidth}px wide in a ${m.innerWidth}px viewport (widest: ${m.widest?.el} to ${m.widest?.right}px)`)
       if (/maximum-scale|user-scalable\s*=\s*(no|0)/i.test(m.meta)) fail(`viewport meta blocks zoom: ${m.meta}`)
       if (m.smallInputs.length) fail(`inputs under 16px zoom the page on focus in ios: ${m.smallInputs.join(', ')}`)
+
+      // the line: every control at least 48px tall, and every stub on one line (64px, never wrapping)
+      const line = await page.evaluate(() => {
+        const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 }
+        const small = [...document.querySelectorAll('.line-block button, .line-block a, main > .block .stub-row button')].filter(vis)
+          .filter((e) => e.getBoundingClientRect().height < 47.5).map((e) => `"${(e.textContent || e.getAttribute('aria-label') || '').trim().slice(0, 24)}" ${Math.round(e.getBoundingClientRect().height)}px`)
+        const tall = [...document.querySelectorAll('.ticket-stub')].filter(vis).filter((e) => e.getBoundingClientRect().height > 72).map((e) => `${e.querySelector('.stub-title')?.textContent} ${Math.round(e.getBoundingClientRect().height)}px`)
+        return { small, tall }
+      })
+      if (line.small.length) fail(`controls in the line under 48px: ${line.small.slice(0, 5).join(', ')}`)
+      if (line.tall.length) fail(`stubs wrapping past one line: ${line.tall.slice(0, 5).join(', ')}`)
 
       // scroll stability: step the page down, each step must land exactly where it was sent, height never changing
       if (SCROLL_STEPS.includes(name) && m.scrollHeight > m.innerHeight + 700) {
