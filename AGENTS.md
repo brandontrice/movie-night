@@ -211,7 +211,9 @@ insert behind the "added" toast, which never leaves the page.
 - **Propose before building** anything substantial, and end every proposal with
   an explicit recommendation. Make the call and say why.
 - Work in phases that end in a **STOP** for approval. Visual phases end with
-  before/after screenshots at 390 and 1440, a build, then deploy, commit, push.
+  before/after screenshots at 390 and 1440 **and** a passing `node design/mobile.mjs`
+  run (real webkit iPhone and chromium Android profiles; see `design/README.md`), a
+  build, then deploy, commit, push. Desktop Chrome at 390px is not a phone.
 - **Full runnable commands and SQL**, and say which directory each runs in.
 - If this file conflicts with what you find in the code, stop and say so.
 

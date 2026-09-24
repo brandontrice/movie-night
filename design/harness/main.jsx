@@ -22,7 +22,11 @@ if (P.get('lights') !== '1') sessionStorage.setItem('movie-night:house-lights', 
 const SEEN_KEY = 'movie-night:reel-seen'
 const SCENES = window.__SCENES = {}
 const DAY = 864e5
-localStorage.setItem(SEEN_KEY, new RealDate(NOW - (P.get('seen') === 'now' ? 0 : 3 * DAY)).toISOString())
+// seen=now (nothing new), seen=<n>d (n days ago), seen=never (a phone that has never been here: every arrival
+// of the last week is new, the longest greeting there can be). default 3 days
+const seen = P.get('seen') || '3d'
+if (seen === 'never') localStorage.removeItem(SEEN_KEY)
+else localStorage.setItem(SEEN_KEY, new RealDate(NOW - (seen === 'now' ? 0 : parseInt(seen, 10) * DAY)).toISOString())
 
 // ---- HARD RULE: the harness never presses anything that changes or removes data ----
 // nevermind, sure?, imported, sign out, delete: the driver refuses to click them, and a capture-phase listener
@@ -63,9 +67,19 @@ async function type(sel, value) {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value)
   el.dispatchEvent(new Event('input', { bubbles: true }))
 }
-const loaded = () => find(() => q('.shelf, .block .hint'))
+// loaded means the shelf has answered: its list, or a final hint (not "checking the shelf")
+const loaded = async () => {
+  await find(() => q('.shelf') || byText('.shelf-block .hint', 'nothing'))
+  await find(() => q('.line .row') || byText('.line-block .hint', 'nothing waiting'))
+}
 // the greeting only shows when something landed since the last visit; dismiss it if it's there
-const dismissGreeting = async () => { await loaded(); await sleep(150); if (q('.greet .primary')) { await click('.greet .primary'); await sleep(100) } }
+const dismissGreeting = async () => {
+  await loaded()
+  // the greeting mounts a beat after the shelf answers; give it up to 1.5s (seen=now never gets one)
+  if (P.get('seen') !== 'now') await find(() => q('.greet .greet-foot .primary, .greet .primary'), 1500).catch(() => null)
+  const b = q('.greet .greet-foot .primary') || q('.greet .primary')
+  if (b) { b.click(); await sleep(150) }
+}
 
 const shelfItems = data.shelf?.items ?? []
 const firstOf = (type) => shelfItems.find((i) => i.type === type && (type === 'album' || data.details[`${type}:${i.external_id}`]))
@@ -128,7 +142,9 @@ Object.assign(SCENES, {
 })
 async function sidebar(expand, y) {
   await dismissGreeting(); await loaded()
-  while (expand && byText('.line-col .link.more', 'see all')) { await click('.line-col .link.more', 'see all'); await sleep(50) }
+  // expand every column, waiting for each to open before the next, so the measured height is the full one
+  const seeAll = () => [...document.querySelectorAll('.line-col .link.more')].filter((b) => /see all/.test(b.textContent)).length
+  while (expand && seeAll()) { const n = seeAll(); await click('.line-col .link.more', 'see all'); await find(() => seeAll() < n || null) }
   await sleep(300)
   scrollTo(0, y); await sleep(500)
   const el = q('.line-block')

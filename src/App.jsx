@@ -116,18 +116,17 @@ function seededShuffle(list, seed) {
 /* the sign over the door: a ring of bulbs around a black-and-gold board that chase on, then keep chasing */
 const TOP = 19, SIDE = 3
 function Marquee({ children, sticky = false }) {
-  // once you've scrolled past the fold the sign tucks up into a slimmer version of itself and stays put
-  const [compact, setCompact] = useState(false)
+  // the full sign stays in the page and scrolls away like anything else. once it's gone, a slim copy fixed to the top
+  // fades in. nothing here ever changes the page's height while you scroll: the old sticky sign shrank in place, the
+  // page jumped by what it lost, and on a phone that yanked the scroll back under your finger (and on iOS, with the
+  // greeting up, kept safari's toolbar from ever collapsing, so "got it" stayed hidden under it)
+  const ref = useRef(null)
+  const [bar, setBar] = useState(false)
   useEffect(() => {
-    if (!sticky) return
-    let raf = 0
-    const on = () => {
-      cancelAnimationFrame(raf)
-      raf = requestAnimationFrame(() => setCompact((c) => (window.scrollY > (c ? 40 : 120))))
-    }
-    window.addEventListener('scroll', on, { passive: true })
-    on()
-    return () => { window.removeEventListener('scroll', on); cancelAnimationFrame(raf) }
+    if (!sticky || !ref.current) return
+    const io = new IntersectionObserver(([e]) => setBar(!e.isIntersecting), { rootMargin: '-80px 0px 0px 0px' })
+    io.observe(ref.current)
+    return () => io.disconnect()
   }, [sticky])
   const bulbs = useMemo(() => {
     const out = []
@@ -139,9 +138,8 @@ function Marquee({ children, sticky = false }) {
     for (let k = SIDE; k >= 1; k--) put(0, k / (SIDE + 1) * 100, 'l')           // up the left
     return out
   }, [])
-  // compact, only the bottom row stays lit: the slim sign reads as a letterboard with a strip of lights under it
-  return (
-    <header className={'board' + (sticky ? ' sticky' : '') + (compact ? ' compact' : '')}>
+  const sign = (
+    <>
       <div className="board-glow" aria-hidden="true" />
       <div className="board-inner">
         <div className="bulbs" aria-hidden="true">
@@ -150,7 +148,15 @@ function Marquee({ children, sticky = false }) {
         <div className="board-face">{children}</div>
       </div>
       <div className="valance" aria-hidden="true" />
-    </header>
+    </>
+  )
+  // the slim copy only repeats what the real header already says, so it's hidden from screen readers and inert.
+  // in it only the bottom row of bulbs stays lit: a letterboard with a strip of lights under it
+  return (
+    <>
+      <header ref={ref} className="board">{sign}</header>
+      {sticky && <div className={'board compact bar' + (bar ? ' shown' : '')} aria-hidden="true" inert>{sign}</div>}
+    </>
   )
 }
 
@@ -616,12 +622,13 @@ function Greeting({ arrivals, isFresh, loaded, who, profiles, me, onOpen }) {
     setShow(false)
   }
 
+  // no scroll lock: a greeting must never be able to trap anyone. the page behind stays scrollable (on ios a locked
+  // body plus a greeting taller than the visible screen left "got it" under safari's toolbar with no way out)
   useEffect(() => {
     if (!show) return
     const onKey = (e) => e.key === 'Escape' && dismiss()
     window.addEventListener('keydown', onKey)
-    document.body.style.overflow = 'hidden'
-    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = '' }
+    return () => window.removeEventListener('keydown', onKey)
   }, [show])
 
   const name = (a) => (a.actor ? who(a.actor) : null)
@@ -641,6 +648,7 @@ function Greeting({ arrivals, isFresh, loaded, who, profiles, me, onOpen }) {
     return parts.length <= 1 ? parts[0] || '' : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1]
   })()
 
+  // everything you missed, grouped by type; the list scrolls inside the window and its artwork loads lazily
   const groups = TYPES.map((t) => [t, fresh.filter((a) => a.row.type === t)]).filter(([, l]) => l.length)
 
   return (
@@ -659,10 +667,14 @@ function Greeting({ arrivals, isFresh, loaded, who, profiles, me, onOpen }) {
 
       {show && (
         <div className="greet-wrap" onClick={dismiss}>
-          <section className="greet stub tear" role="dialog" aria-label="since you were last here" onClick={(e) => e.stopPropagation()}>
-            <p className="greet-kicker">since you were last here</p>
-            <h2 className="greet-title">{summary} landed on the shelf</h2>
-            <div className="reel-groups">
+          {/* head and foot never scroll away: close and "got it" are always on screen, only the list between them scrolls */}
+          <section className="greet stub tear" role="dialog" aria-labelledby="greet-title" onClick={(e) => e.stopPropagation()}>
+            <div className="greet-head">
+              <p className="greet-kicker">since you were last here</p>
+              <h2 className="greet-title" id="greet-title">{summary} landed on the shelf</h2>
+              <button className="greet-close" onClick={dismiss} aria-label="close">close</button>
+            </div>
+            <div className="reel-groups greet-list">
               {groups.map(([t, list]) => (
                 <div key={t} className="reel-group">
                   <div className="reel-type">{t}s</div>
@@ -684,7 +696,7 @@ function Greeting({ arrivals, isFresh, loaded, who, profiles, me, onOpen }) {
                 </div>
               ))}
             </div>
-            <div className="actions">
+            <div className="greet-foot">
               <button className="primary" onClick={dismiss}>got it</button>
             </div>
           </section>
