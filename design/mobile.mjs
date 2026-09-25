@@ -56,6 +56,15 @@ export const SCENES = [
   ['line-error', 'scene=line-error&rows=fail&seen=now'],
   ['line-empty', 'scene=line-empty&rows=empty&seen=now'],
   ['stubs', 'scene=stubs&seen=now'],
+  ['shelf', 'scene=shelf'],
+  ['shelf-lit', 'scene=shelf&seen=7d'],
+  ['shelf-search', 'scene=shelf-search&seen=now'],
+  ['shelf-albums', 'scene=shelf-albums&seen=now'],
+  ['shelf-empty-filter', 'scene=shelf-empty-filter&seen=now&shelf=noshows'],
+  ['shelf-nomatch', 'scene=shelf-nomatch&seen=now'],
+  ['shelf-loading', 'scene=shelf-loading&shelf=slow&seen=now'],
+  ['shelf-failed', 'scene=shelf-failed&shelf=fail&seen=now'],
+  ['shelf-late', 'scene=shelf-late&late=1&seen=now'],
 ]
 
 // ---- static server for the built harness ----
@@ -79,7 +88,8 @@ async function guard(context, blocked) {
 }
 
 async function open(browser, profile, query) {
-  const context = await browser.newContext({ ...profile.device })
+  // brandon's time zone, so day groups and dates match the desktop shots on any machine
+  const context = await browser.newContext({ ...profile.device, timezoneId: 'America/New_York' })
   const blocked = []
   await guard(context, blocked)
   const page = await context.newPage()
@@ -171,13 +181,13 @@ for (const profile of PROFILES) {
       // the line: every control at least 48px tall, and every stub on one line (64px, never wrapping)
       const line = await page.evaluate(() => {
         const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 }
-        const small = [...document.querySelectorAll('.line-block button, .line-block a, main > .block .stub-row button')].filter(vis)
+        const small = [...document.querySelectorAll('.line-block button, .line-block a, main > .block .stub-row button, .shelf-block button, .shelf-block a, .shelf-block input')].filter(vis)
           .filter((e) => e.getBoundingClientRect().height < 47.5).map((e) => `"${(e.textContent || e.getAttribute('aria-label') || '').trim().slice(0, 24)}" ${Math.round(e.getBoundingClientRect().height)}px`)
-        const tall = [...document.querySelectorAll('.ticket-stub')].filter(vis).filter((e) => e.getBoundingClientRect().height > 72).map((e) => `${e.querySelector('.stub-title')?.textContent} ${Math.round(e.getBoundingClientRect().height)}px`)
+        const tall = [...document.querySelectorAll('.ticket-stub, .shelf-row')].filter(vis).filter((e) => e.getBoundingClientRect().height > 72).map((e) => `${e.querySelector('.stub-title, .shelf-title')?.textContent} ${Math.round(e.getBoundingClientRect().height)}px`)
         return { small, tall }
       })
-      if (line.small.length) fail(`controls in the line under 48px: ${line.small.slice(0, 5).join(', ')}`)
-      if (line.tall.length) fail(`stubs wrapping past one line: ${line.tall.slice(0, 5).join(', ')}`)
+      if (line.small.length) fail(`controls in the line or the shelf under 48px: ${line.small.slice(0, 5).join(', ')}`)
+      if (line.tall.length) fail(`stubs or shelf rows wrapping past one line: ${line.tall.slice(0, 5).join(', ')}`)
 
       // scroll stability: step the page down, each step must land exactly where it was sent, height never changing
       if (SCROLL_STEPS.includes(name) && m.scrollHeight > m.innerHeight + 700) {
@@ -259,6 +269,31 @@ for (const profile of PROFILES) {
         await page.locator('.greet .greet-foot .primary').tap()
         await page.waitForTimeout(250)
         if (await page.locator('.greet').count()) fail('tapping "got it" did not close the greeting')
+      }
+      const STRIPS = { shelf: '.shelf-tabs', 'feed-quiet': '.cases:not(.wall)' }
+      if (STRIPS[name]) {
+        const sel = STRIPS[name]
+        // every engine: nothing on the strip or above it may claim the vertical pan
+        const ta = await page.evaluate((sel) => { const out = []; for (let e = document.querySelector(sel); e && e !== document.documentElement; e = e.parentElement) { const t = getComputedStyle(e).touchAction; if (t !== 'auto' && t !== 'manipulation' && !/pan-y/.test(t)) out.push(`${e.tagName.toLowerCase()}.${String(e.className).split(' ')[0]}: ${t}`) } return out }, sel)
+        if (ta.length) fail(`${sel} blocks vertical panning: ${ta.join(', ')}`)
+        // android: real touch drags
+        if (profile.engine === chromium) {
+          await page.reload(); await page.waitForFunction(() => window.__ready, null, { timeout: 30000 })
+          const cdp = await context.newCDPSession(page)
+          const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] })
+          const drag = async (x, y, dx, dy) => { await touch('touchStart', x, y); for (let k = 1; k <= 20; k++) await touch('touchMove', x + (dx * k) / 20, y + (dy * k) / 20); await touch('touchEnd'); await page.waitForTimeout(500) }
+          const r = await page.evaluate((sel) => { const e = document.querySelector(sel); e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2, over: e.scrollWidth > e.clientWidth, y0: scrollY } }, sel)
+          await drag(r.x, r.y, 0, -220)
+          const y1 = await page.evaluate(() => scrollY)
+          if (y1 <= r.y0 + 20) fail(`a vertical swipe starting on ${sel} did not scroll the page (${r.y0} -> ${y1})`)
+          if (r.over) {
+            const r2 = await page.evaluate((sel) => { const e = document.querySelector(sel); e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return { x: b.left + b.width * 0.8, y: b.top + b.height / 2 } }, sel)
+            await drag(r2.x, r2.y, -160, 0)
+            const left = await page.evaluate((sel) => document.querySelector(sel).scrollLeft, sel)
+            if (!left) fail(`a sideways swipe on ${sel} did not scroll it`)
+          }
+          report[id].strip = { sel, pageMoved: y1 - r.y0, sideways: r.over }
+        }
       }
     } catch (e) { fail(`scene threw: ${e.message.split(/\r?\n/)[0]}`) }
     console.log(`${problems.some((p) => p.startsWith(id)) ? '!! ' : 'ok '} ${id}  ${m.innerWidth ?? '?'}x${m.innerHeight ?? '?'} scrollWidth ${m.scrollWidth ?? '?'}${m.greeting ? `, greeting with ${m.greetItems} items, button at ${m.button?.top}..${m.button?.bottom}` : ''}`)

@@ -18,6 +18,7 @@ node design/shoot.mjs p1 feed sheet-movie          # just the named scenes -> de
 REDUCED=1 node design/shoot.mjs p1-reduced feed    # with prefers-reduced-motion: reduce
 node design/compare.mjs before p1                  # side by side -> design/shots/compare-before-p1.html
 node design/mobile.mjs p1-mobile                   # real mobile: must end "mobile checks passed"
+TZ=America/New_York node design/check-time.mjs     # day labels and local-time grouping: must end "time checks passed"
 ```
 
 Open `design/shots/<label>/index.html` for the contact sheet. **Re-capturing data changes the

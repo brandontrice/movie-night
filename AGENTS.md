@@ -241,3 +241,9 @@ needs Brandon's go-ahead, a deploy, and the drift check in section 3.
    three), keeping `GET shelf?art=` working for `<img>` tags, which cannot
    send headers (a short-lived signed art URL, or accept the anon key there
    as today).
+
+### Possible later design phases (Brandon has not asked for these yet)
+
+- **A desktop wall view for the shelf**: a list / wall toggle, the wall reusing
+  now showing's poster cases (`src/PosterCase.jsx`, album sleeves included).
+  Deferred from D4 (Sep 2026) as a feature rather than polish.

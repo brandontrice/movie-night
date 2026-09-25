@@ -52,7 +52,19 @@ export const SHOTS = [
   ['form-album', 'form-album', '', 'request form: albums'],
   ['form-nomatch', 'form-nomatch', '', 'request form: no matches'],
   ['form-added', 'form-added', '', 'request form: added toast'],
-  ['shelf-nomatch', 'shelf-nomatch', '', 'shelf search with nothing matching'],
+  ['shelf-nomatch', 'shelf-nomatch', '', 'shelf search with nothing matching: says so, offers clear search'],
+  ['shelf', 'shelf', '', 'the shelf: tools, then the program grouped by the day each title arrived'],
+  ['shelf-lit', 'shelf', 'seen=7d', 'last visit a week ago: everything since is lit gold (the only gold on the shelf)'],
+  ['shelf-search', 'shelf-search', 'seen=now', 'searching "nas"'],
+  ['shelf-albums', 'shelf-albums', 'seen=now', 'the albums tab: square covers, artist in the meta line'],
+  ['shelf-empty-filter', 'shelf-empty-filter', 'seen=now&shelf=noshows', 'a filter with nothing in it. STRESS FIXTURE: the real shelf has 9 shows, left out here'],
+  ['shelf-more', 'shelf-more', 'seen=now', 'after "show 20 more": the day groups carry on'],
+  ['shelf-loading', 'shelf-loading', 'shelf=slow&seen=now', 'the shelf loading'],
+  ['shelf-failed', 'shelf-failed', 'shelf=fail&seen=now', "the shelf failed: couldn't reach the servers, try again"],
+  ['shelf-empty', 'shelf-empty', 'shelf=empty&seen=now', 'nothing on the servers yet'],
+  ['shelf-late', 'shelf-late', 'late=1&seen=now', 'TIME ZONE FIXTURE: one real movie moved to 9:30 pm eastern, monday sep 21 (01:30 utc tuesday); device in eastern time'],
+  ['shelf-late-utc', 'shelf-late', 'late=1&seen=now', 'the same fixture with the device set to utc, for contrast', [{ w: 390, h: 844, scale: 2, mobile: true, tz: 'UTC' }]],
+  ['shelf-thursday', 'shelf-day', 'seen=now&now=2026-09-24T16:00:00Z&day=sep 17', 'the shelf on thursday sep 24 (the day this was reviewed): sep 17 is a week back, so it reads as a date'],
   ['loading', 'loading', 'shelf=slow&seen=now', 'first load, shelf still coming'],
   ['empty', 'empty', 'rows=empty&shelf=empty', 'brand new: nothing requested, nothing on the servers'],
   ['focus-paper', 'focus-paper', '', 'keyboard focus on paper'],
@@ -127,6 +139,8 @@ async function shoot([name, scene, extra], vp, { expectBlocked = 0 } = {}) {
   })
   await send('Fetch.enable', { patterns: [{ urlPattern: '*' }] })
   await send('Emulation.setFocusEmulationEnabled', { enabled: true }) // headless pages are never focused, so :focus would never match
+  // every shot in brandon's time zone, so day groups and dates come out the same on any machine (a viewport can override)
+  await send('Emulation.setTimezoneOverride', { timezoneId: vp.tz || 'America/New_York' })
   if (REDUCED) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
   await send('Emulation.setDeviceMetricsOverride', { width: vp.w, height: vp.h, deviceScaleFactor: vp.scale, mobile: vp.mobile })
   await send('Page.navigate', { url: `${base}?scene=${scene}${extra ? '&' + extra : ''}` })

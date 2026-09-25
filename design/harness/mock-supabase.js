@@ -4,7 +4,8 @@ import data from '../fixture/data.json'
 
 const P = new URLSearchParams(location.search)
 const who = P.get('as') || 'brandon'            // brandon | cate | out
-const shelfMode = P.get('shelf') || 'ok'        // ok | slow | fail | empty
+const shelfMode = P.get('shelf') || 'ok'        // ok | slow | fail | empty | noshows
+// shelf=noshows is a stress case: the real shelf has 9 shows, so they're left out to show an empty filter. labelled.
 const rowsMode = P.get('rows') || 'ok'          // ok | empty | slow | fail
 const detailsMode = P.get('details') || 'ok'    // ok | slow | fail
 const lookupMode = P.get('lookup') || 'ok'      // ok | slow
@@ -26,9 +27,18 @@ const lineMode = P.get('line') || 'ok'          // ok | long
 // watched=some is a stress case too: jellyfin reports nothing as watched today (the played=false bug), so every third
 // movie or show is marked watched to show the dimmed case and its stamp. shot notes say so.
 const watchedMode = P.get('watched') || 'real'  // real | some
-const shelfData = watchedMode === 'some' && data.shelf
+const watchedData = watchedMode === 'some' && data.shelf
   ? { ...data.shelf, items: data.shelf.items.map((i, k) => (i.type !== 'album' && k % 3 === 1 ? { ...i, played: true } : i)) }
   : data.shelf
+// late=1 is a time-zone fixture: one real movie is moved to 9:30 pm eastern on monday sep 21 (01:30 utc tuesday),
+// then the list is re-sorted newest first as the shelf function would. it should group under monday in eastern
+// time, not under tuesday as it would in utc. labelled; the title is exposed as window.__harness.lateTitle
+export const LATE_AT = '2026-09-22T01:30:00Z'
+const lateMode = P.get('late') === '1'
+const lateItem = lateMode ? watchedData.items.find((i) => i.type === 'movie' && i.added_at < '2026-09-21') : null
+const shelfData = lateItem
+  ? { ...watchedData, items: watchedData.items.map((i) => (i === lateItem ? { ...i, added_at: LATE_AT } : i)).sort((a, b) => (b.added_at ?? '').localeCompare(a.added_at ?? '')) }
+  : watchedData
 function longLine(requests) {
   const extra = new Set()
   for (const p of data.profiles) {
@@ -63,6 +73,7 @@ const functions = {
     if (name === 'shelf') {
       if (shelfMode === 'slow') return never()
       if (shelfMode === 'fail') return { data: null, error: new Error('shelf down') }
+      if (shelfMode === 'noshows') return { data: { ...shelfData, items: shelfData.items.filter((i) => i.type !== 'show') }, error: null }
       return { data: shelfMode === 'empty' ? { items: [] } : shelfData, error: null }
     }
     if (name === 'details') {
@@ -87,6 +98,7 @@ const channel = { on: (_e, _f, cb) => { listeners.push(cb); return channel }, su
 // an import that happens while you're looking: an old request gets a fresh imported event, then realtime fires
 const REEL = 7 * 864e5
 window.__harness = {
+  lateTitle: lateItem?.title ?? null,
   async arrive() {
     const recentLib = new Set((data.shelf?.items ?? []).filter((i) => Date.now() - new Date(i.added_at) < REEL).map((i) => i.library_item_id))
     const req = data.requests.find((r) => r.status === 'imported' && r.library_item_id && !recentLib.has(r.library_item_id))

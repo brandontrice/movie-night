@@ -3,6 +3,8 @@ import { supabase } from './lib/supabase'
 import { art, sized } from './lib/images'
 import PosterCase, { CaseSkeletons } from './PosterCase'
 import LineStub, { StubSkeletons } from './LineStub'
+import { ShelfTools, ShelfList, ShelfSkeleton } from './Shelf'
+import { timeAgo } from './lib/time'
 import { useMedia } from './lib/useMedia'
 
 const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || '').toLowerCase()
@@ -66,18 +68,6 @@ const HOUSE_LIGHTS = (() => {
 // the room behind everything: light spilling from the sign, velvet in the margins, grain, a darker floor
 function Room() {
   return <div className={'room' + (HOUSE_LIGHTS ? ' house-lights' : '')} aria-hidden="true" />
-}
-
-function timeAgo(iso) {
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
-  if (s < 60) return 'just now'
-  const m = s / 60
-  if (m < 60) return `${Math.floor(m)}m ago`
-  const h = m / 60
-  if (h < 24) return `${Math.floor(h)}h ago`
-  const d = h / 24
-  if (d < 7) return `${Math.floor(d)}d ago`
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 function when(iso) {
@@ -198,8 +188,6 @@ function SignIn() {
 }
 
 const NINETY_DAYS = 90 * 24 * 3600 * 1000
-const RECENT = 72 * 3600 * 1000
-const isRecent = (r) => Date.now() - new Date(r.imported_at || r.created_at).getTime() < RECENT
 const PAGE = 20
 
 function Feed({ session }) {
@@ -319,6 +307,12 @@ function Feed({ session }) {
       (!q || r.title.toLowerCase().includes(q) || (r.artist || '').toLowerCase().includes(q))
     )
   }, [ready, shelfQ, shelfType, shelfOlder])
+  const typeCounts = useMemo(() => {
+    const cutoff = Date.now() - NINETY_DAYS
+    const n = { all: 0, movie: 0, show: 0, album: 0 }
+    for (const r of ready) if (shelfOlder || new Date(r.imported_at || r.created_at).getTime() >= cutoff) { n.all++; n[r.type]++ }
+    return n
+  }, [ready, shelfOlder])
   const olderCount = useMemo(() => {
     const cutoff = Date.now() - NINETY_DAYS
     return ready.filter((r) => new Date(r.imported_at || r.created_at).getTime() < cutoff).length
@@ -501,32 +495,42 @@ function Feed({ session }) {
           {/* the shelf */}
           <section className="block shelf-block" aria-labelledby="sec-shelf">
             <SectionHead id="sec-shelf" title="the shelf" count={freshKeys.size > 0 ? `${freshKeys.size} new` : null} countTone="fresh" />
-            <div className="shelf-tools">
-              <input value={shelfQ} onChange={(e) => { setShelfQ(e.target.value); setShelfPage(1) }} placeholder="search what's been imported" />
-              <div className="chips">
-                {['all', ...TYPES].map((t) => (
-                  <button key={t} className={'chip' + (shelfType === t ? ' on' : '')} onClick={() => { setShelfType(t); setShelfPage(1) }}>{t === 'all' ? 'everything' : t + 's'}</button>
-                ))}
+            <ShelfTools
+              q={shelfQ} onQ={(v) => { setShelfQ(v); setShelfPage(1) }}
+              type={shelfType} onType={(t) => { setShelfType(t); setShelfPage(1) }}
+              counts={typeCounts}
+              resultText={libLoaded && (shelfQ || shelfType !== 'all') ? `${shelf.length} on the shelf ${shelf.length === 1 ? 'matches' : 'match'}` : ''}
+            />
+            {!libLoaded ? (
+              <><p className="sr-only" role="status">checking the shelf</p><ShelfSkeleton n={6} /></>
+            ) : libError && ready.length === 0 ? (
+              <div className="case-plaque error" role="alert">
+                <p>couldn't reach the servers</p>
+                <button className="btn more" onClick={retryLibrary}>try again</button>
               </div>
-            </div>
-            {shelf.length === 0 ? (
-              <p className="hint dim">{!libLoaded ? 'checking the shelf' : libError && ready.length === 0 ? "couldn't reach the servers" : ready.length === 0 ? 'nothing on the servers yet' : 'nothing matches'}</p>
+            ) : ready.length === 0 ? (
+              <div className="case-plaque empty">
+                <span className="case dark" aria-hidden="true"><span className="case-glass"><span className="case-mat" /></span></span>
+                <p>nothing on the servers yet</p>
+              </div>
+            ) : shelf.length === 0 ? (
+              <div className="shelf-none">
+                {shelfQ.trim()
+                  ? <><p>nothing on the shelf matches <q>{shelfQ.trim()}</q></p><button className="btn more" onClick={() => { setShelfQ(''); setShelfPage(1) }}>clear search</button></>
+                  : <><p>no {shelfType}s on the shelf yet</p><button className="btn more" onClick={() => { setShelfType('all'); setShelfPage(1) }}>show everything</button></>}
+              </div>
             ) : (
-              <ul className="shelf">
-                {shelf.slice(0, shelfPage * PAGE).map((r) => (
-                  <li key={r.id} className={'row imported' + (freshKeys.has(r.id) ? ' fresh' : '')} onClick={(e) => { if (!e.target.closest('a,button')) setOpen(r) }}>
-                    {r.poster_url ? <img className="thumb" src={sized(r.poster_url, 96)} alt="" width="28" height="42" loading="lazy" decoding="async" onError={(e) => (e.currentTarget.style.visibility = 'hidden')} /> : <span className="thumb blank" />}
-                    <span className="row-title">{r.title}{r.year ? <span className="year"> {r.year}</span> : null}{r.artist ? <span className="year"> · {r.artist}</span> : null}</span>
-                    {isRecent(r) && <span className="tag new">new</span>}
-                    {r.requested_by && <span className="for" style={{ '--c': profiles[r.requested_by]?.color || '#999' }}>for {r.requested_by === session.user.id ? 'you' : who(r.requested_by)}</span>}
-                    <span className="row-when">{timeAgo(r.imported_at || r.created_at)}</span>
-                    {r.play_url && <a className="btn tiny" href={r.play_url} target="_blank" rel="noreferrer">play</a>}
-                  </li>
-                ))}
-              </ul>
+              <ShelfList
+                items={shelf} shown={shelfPage * PAGE} freshKeys={freshKeys} onOpen={setOpen}
+                forWhom={(r) => (r.requested_by ? { label: `for ${r.requested_by === session.user.id ? 'you' : who(r.requested_by)}`, color: profiles[r.requested_by]?.color || '#999' } : null)}
+              />
             )}
-            <div className="actions">
-              {shelf.length > shelfPage * PAGE && <button className="btn more" onClick={() => setShelfPage((p) => p + 1)}>load more</button>}
+            <div className="actions shelf-actions">
+              {libLoaded && shelf.length > shelfPage * PAGE && (
+                <button className="btn more" onClick={() => setShelfPage((p) => p + 1)}>
+                  show {Math.min(PAGE, shelf.length - shelfPage * PAGE)} more <span className="more-left">({shelf.length - shelfPage * PAGE} left)</span>
+                </button>
+              )}
               {olderCount > 0 && <button className="link more" onClick={() => { setShelfOlder((v) => !v); setShelfPage(1) }}>{shelfOlder ? 'hide older than 90 days' : `show ${olderCount} older`}</button>}
             </div>
           </section>
