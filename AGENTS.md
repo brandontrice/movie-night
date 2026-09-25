@@ -233,6 +233,9 @@ needs Brandon's go-ahead, a deploy, and the drift check in section 3.
    flag, so "has anyone here watched it" needs both users checked); or the
    field is not being returned for this query. Start by comparing
    `UserData` for one title Brandon knows he has watched, per Jellyfin user.
+   **Confirmed on Brandon's iPhone (2026-09-24):** now showing reads "277
+   unwatched", which is every movie and show, so the bug shows in the app, not
+   just the data.
 2. **`shelf`, `details` and `lookup` answer without a key.** Anyone on the LAN
    can list the library, pull album art through the Navidrome proxy, and spend
    the TMDB quota; `library-scan` requires an Authorization header and
@@ -241,6 +244,63 @@ needs Brandon's go-ahead, a deploy, and the drift check in section 3.
    three), keeping `GET shelf?art=` working for `<img>` tags, which cannot
    send headers (a short-lived signed art URL, or accept the anon key there
    as today).
+
+---
+
+## 8. Design phases: where they stand
+
+Every phase ends with before/after shots, `design/mobile.mjs` passing, a build, a
+STOP, then deploy, Brandon's iPhone test, and only then a push.
+
+| Phase | | |
+|---|---|---|
+| D0 | tokens, fixes, foundations, `npm run deploy` | done, `8bff616` |
+| D1 | the shell: room, marquee, desktop box office, section boards, sign-in | done, `aca0084` |
+| fix | iPhone stuck on the greeting; slim sign that never resizes the page | done, `078760f` |
+| D2 | now showing as lit poster cases | done, `4a0fe66` |
+| D3 | the line as box-office stubs, the "..." tray | done, `eef280e` |
+| D4 | the shelf as the program, grouped by arrival day | done, `000304b` |
+| D5 | the detail sheet | **next, waiting for Brandon to start it** |
+| D6 | the request flow, the greeting, toasts | after D5 |
+| D7 | QA pass | after D6 |
+
+Scope added from Brandon's iPhone testing (2026-09-24), on top of each phase's
+original plan. **None of this is built yet.**
+
+### D5: the detail sheet
+- Shows say **"created by"**, not "directed by" (TMDB's `created_by` is what the
+  `details` function already returns for shows).
+- A show's runtime reads as **per episode**: "42 min episodes", not "42 min".
+- Dates in the sheet's trail are lowercase like the rest of the app: "cate asked
+  for it sep 7", "ready to watch sep 17", not "Sep 7".
+- **"nevermind" is so faint it reads as disabled.** Check its contrast (AA
+  4.5:1) and restyle it as a real secondary button. It already uses the same
+  no-timeout confirm as the line's tray ("sure? take it off the list" / "keep
+  it", since D3); confirm that holds after the restyle.
+- **The shelf's desktop "added" column** shows the time of day ("1:28 pm")
+  instead of "1d ago", since the day heading above it already gives the day.
+  Today it counts 24-hour spans while the headings count calendar days, so a
+  title can sit under "tuesday" and say "1d ago".
+
+### D6: the request flow
+- **The floating "+ request" button covers the "..." on rows beneath it.** Give
+  the page enough bottom space that the last stub in the line and the last row
+  on the shelf can scroll fully clear of the button, at every width. Add a
+  mobile check: scrolled to the end, no "..." or "play" sits under the button.
+
+### D7: QA
+- **Rows stay highlighted after a tap on the iPhone** (Gossip Girl's main area
+  stayed lighter than the rows around it). Likely iOS sticky `:hover`, or focus
+  returning from the sheet. Wrap every hover style in `@media (hover: hover)`,
+  keep focus styling on `:focus-visible` only, and check the line's stubs, the
+  cases and the tabs as well as the shelf.
+- **Palette decision for Brandon:** the "for you" dot on the shelf and the
+  "yours" lamp in the line are gold, because Brandon's `profiles.color` is gold
+  (`#f2c14e`). That breaks the D4 rule that gold on the page means only "new since
+  your last visit". Propose an alternative colour for Brandon (with contrast on
+  both paper and the dark room) and **let him choose**. Changing it for real is a
+  one-row update to `profiles.color`, which is a data change and needs his
+  go-ahead; the other route is mapping the colour in the app for display only.
 
 ### Possible later design phases (Brandon has not asked for these yet)
 
